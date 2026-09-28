@@ -245,8 +245,21 @@ export interface ContextInjectionOptions {
 	timeoutMs?: number;
 	shouldInject?: () => boolean;
 	getPrompt: () => string;
-	fetchState: (ctx: unknown) => Promise<unknown>;
-	formatState: (state: unknown, options: { timeoutMs: number; extraGuidance: () => string[] }) => string;
+	/** Fixed text injected verbatim as the per-turn message, with no fetch. */
+	staticContent?: string | null;
+	/**
+	 * Whether a CHILD session also receives the system-prompt section.
+	 *
+	 * Default true: the constant prompt is what tells a subagent which side of
+	 * the bridge it is on. The two-application manager sets this false, because
+	 * its workers already state their own side and its prompt is the connector's
+	 * instructions rather than a side's procedure.
+	 */
+	sectionReachesChildren?: boolean;
+	/** Fetch the live state. Required unless `staticContent` is set. */
+	fetchState?: (ctx: unknown) => Promise<unknown>;
+	/** Render the live state. Required unless `staticContent` is set. */
+	formatState?: (state: unknown, options: { timeoutMs: number; extraGuidance: () => string[] }) => string;
 	extraGuidance?: () => string[];
 	/** The recovery sentence for a failed fetch; each side names its own tool. */
 	failureGuidance?: (error: unknown) => string;
