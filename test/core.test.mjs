@@ -312,6 +312,25 @@ for (const [label, mod] of [
 		threw = true;
 	}
 	check(`${label}: passing both staticContent and fetchState throws`, threw);
+
+	// A manager whose workers already know their side sets
+	// sectionReachesChildren: false, so the section stops at the parent. This is
+	// the two-application manager's shape, and it is the option that keeps the
+	// shared mechanism from quietly changing who sees the prompt.
+	const parentOnly = mod.createContextInjection({
+		section: "unity_blender",
+		customType: "unity_blender_context",
+		shouldInject: () => true,
+		getPrompt: () => "CONNECTOR PROMPT",
+		staticContent: "GUIDANCE",
+		sectionReachesChildren: false,
+	});
+	const childSections = {};
+	await parentOnly(event(child, childSections), {});
+	check(`${label}: sectionReachesChildren:false withholds the section from a child`, childSections.unity_blender === undefined, JSON.stringify(childSections));
+	const parentSections = {};
+	await parentOnly(event("You are the manager.", parentSections), {});
+	check(`${label}: sectionReachesChildren:false still gives the parent the section`, parentSections.unity_blender === "CONNECTOR PROMPT");
 }
 
 /* --------------------------------------------------- the two agree in behaviour -- */

@@ -318,6 +318,23 @@ export function createContextInjection({
 	 * one of them is how it survives.
 	 */
 	staticContent = null,
+	/**
+	 * Whether a CHILD session also receives the system-prompt section.
+	 *
+	 * Default true, which is the core's rule: the constant prompt is what tells
+	 * a subagent which side of the bridge it is on, and withholding it is how a
+	 * worker ends up acting on the parent manager's instructions.
+	 *
+	 * The two-application manager sets this false, and the difference is not
+	 * incidental. Its workers are spawned with their own agent definitions that
+	 * already state the side they are on, and its manager prompt is the
+	 * connector's own instructions rather than a side's procedure — so the
+	 * argument for handing it to a child does not apply there. Recorded as an
+	 * option because the honest version of "unify this" is a shared mechanism
+	 * with the real differences named, not one behaviour applied to three
+	 * managers until it breaks one.
+	 */
+	sectionReachesChildren = true,
 	extraGuidance = () => [],
 	failureGuidance,
 	assumeNothingAbout = "selection, active object, viewport, or camera state",
@@ -337,7 +354,9 @@ export function createContextInjection({
 
 		// The constant prompt first, unconditionally (including for children):
 		// it is what teaches a subagent which side of the bridge it is on.
-		if (event.systemPromptOptions?.sections) event.systemPromptOptions.sections[section] = getPrompt();
+		if (sectionReachesChildren || readActiveAgentName(event.systemPrompt) === null) {
+			if (event.systemPromptOptions?.sections) event.systemPromptOptions.sections[section] = getPrompt();
+		}
 
 		// Static path: no snapshot rule, no failure rule, nothing to fetch.
 		if (staticContent !== null) {

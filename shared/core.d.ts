@@ -116,6 +116,15 @@ export interface ContextInjectionOptions {
 	 * either silently is how a caller that passed both survives.
 	 */
 	staticContent?: string | null;
+	/**
+	 * Whether a CHILD session also receives the system-prompt section.
+	 *
+	 * Default true: the constant prompt is what tells a subagent which side of
+	 * the bridge it is on. The two-application manager sets this false, because
+	 * its workers already state their own side and its prompt is the connector's
+	 * instructions rather than a side's procedure.
+	 */
+	sectionReachesChildren?: boolean;
 	/** Fetch the live state. Throwing means "unavailable", not "empty". Required unless `staticContent` is set. */
 	fetchState?: (ctx: unknown) => Promise<unknown>;
 	/** Render the live state, or return "" for nothing worth injecting. Required unless `staticContent` is set. */

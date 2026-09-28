@@ -282,7 +282,14 @@ export function createContextInjection(options: ContextInjectionOptions): Contex
 	return async function injectContext(event, ctx) {
 		if (options.shouldInject && !options.shouldInject()) return undefined;
 
-		if (event.systemPromptOptions?.sections) event.systemPromptOptions.sections[options.section] = options.getPrompt();
+		// The constant prompt first, unconditionally, including for children —
+		// it is what teaches a subagent which side of the bridge it is on. The
+		// two-application manager opts out: its workers already know their side,
+		// and its prompt is the connector's instructions rather than a side's
+		// procedure, so the argument does not apply there.
+		if ((options.sectionReachesChildren ?? true) || readActiveAgentName(event.systemPrompt) === null) {
+			if (event.systemPromptOptions?.sections) event.systemPromptOptions.sections[options.section] = options.getPrompt();
+		}
 
 		// Static path: no snapshot rule, no failure rule, nothing to fetch.
 		if (options.staticContent != null) {
