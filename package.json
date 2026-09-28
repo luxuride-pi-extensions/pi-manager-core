@@ -1,0 +1,24 @@
+{
+	"name": "pi-manager-core",
+	"version": "0.1.0",
+	"description": "pi extension: the shared core of the manager-mode extensions (engage command, manager gate, prompt composition, path resolution)",
+	"keywords": [
+		"pi-extension",
+		"subagent",
+		"manager"
+	],
+	"private": true,
+	"type": "module",
+	"license": "MIT",
+	"scripts": {
+		"typecheck": "tsc --noEmit",
+		"test": "node test/core.test.mjs && node test/agent-template-checks.test.mjs && node test/resolver-copies.mjs",
+		"check:consumers": "node test/resolver-copies.mjs",
+		"fix:consumers": "node test/resolver-copies.mjs --fix"
+	},
+	"devDependencies": {
+		"@earendil-works/pi-coding-agent": "^0.87.1",
+		"@types/node": "^22.0.0",
+		"typescript": "^5.6.0"
+	}
+}
