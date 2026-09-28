@@ -12,7 +12,7 @@
 	"license": "MIT",
 	"scripts": {
 		"typecheck": "tsc --noEmit",
-		"test": "node test/core.test.mjs && node test/agent-template-checks.test.mjs && node test/resolver-copies.mjs",
+		"test": "node test/core.test.mjs && node test/agent-template-checks.test.mjs && node test/resolver-copies.mjs && node test/extension-registration.mjs && node test/allowlists.mjs",
 		"check:consumers": "node test/resolver-copies.mjs",
 		"which-core": "node test/which-core.mjs",
 		"fix:consumers": "node test/resolver-copies.mjs --fix"

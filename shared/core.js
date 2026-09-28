@@ -233,9 +233,19 @@ export function createManagerMode({ allowedTools, onGateMessage } = {}) {
 	 */
 	function checkToolCall(event, systemPrompt) {
 		if (!isManagerSession(systemPrompt)) return null;
-		if (allowed.has(event.toolName)) return null;
+		// The application's refusals are consulted BEFORE the allowlist, because
+		// the allowlist is coarse (a manager is allowed to `read` files) while a
+		// refusal is specific (a manager is not allowed to `read` an image, even
+		// though `read` is allowed). Checking the allowlist first lets it
+		// short-circuit the refusals, which is a silent loss of policy: nothing
+		// reports the refusal as unreachable, it just stops firing.
+		//
+		// `onGateMessage` returning null means "not mine", so an application that
+		// has no opinion still falls through to the allowlist and then to the
+		// default below. Order, not a flag, is what keeps both halves working.
 		const extra = typeof onGateMessage === "function" ? onGateMessage(event) : null;
 		if (extra) return extra;
+		if (allowed.has(event.toolName)) return null;
 		return {
 			block: true,
 			reason: defaultGateReason(event.toolName),

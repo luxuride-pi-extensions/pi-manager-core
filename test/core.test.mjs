@@ -185,9 +185,16 @@ for (const [label, mod] of [
 		},
 	});
 	mode.markEngaged();
-	check(`${label}: an allowlisted call skips the application hook`, (mode.checkToolCall({ toolName: "read", input: {} }, "x"), called) === 0);
+	// The hook is consulted BEFORE the allowlist, so it must fire even for an
+	// allowlisted tool — a coarse allowlist must not be able to short-circuit a
+	// specific refusal. `read` is the real case: it is allowed, yet reading an
+	// image through it is refused.
+	const allowed = mode.checkToolCall({ toolName: "read", input: {} }, "x");
+	check(`${label}: the application hook is consulted even for an allowlisted tool`, called === 1);
+	check(`${label}: an allowlisted call with no refusal is allowed`, allowed === null);
 	const refused = mode.checkToolCall({ toolName: "subagent", input: {} }, "x");
 	check(`${label}: the application refusal wins`, refused?.reason === "roster");
+	check(`${label}: a tool in neither the allowlist nor a refusal is refused by default`, mode.checkToolCall({ toolName: "bash", input: {} }, "x")?.block === true);
 }
 
 /* ------------------------------------------------------ context injection -- */

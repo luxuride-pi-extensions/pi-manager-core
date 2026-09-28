@@ -67,8 +67,10 @@ export interface ManagerModeOptions {
 	/** Tool names the manager keeps, e.g. text reads, bash, todo, supervisor. */
 	allowedTools?: readonly string[];
 	/**
-	 * Application-specific refusals, consulted only for a call the allowlist
-	 * has not already cleared. Return null to fall through to the default.
+	 * Application-specific refusals, consulted BEFORE the allowlist so a coarse
+	 * allowlist cannot short-circuit a specific refusal. Return null when the
+	 * application has no opinion, to fall through to the allowlist and then to
+	 * the default refusal.
 	 */
 	onGateMessage?: (event: ToolCallEvent) => ToolCallRefusal | null;
 }
