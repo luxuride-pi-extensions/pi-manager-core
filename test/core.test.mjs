@@ -269,6 +269,49 @@ for (const [label, mod] of [
 		formatState: () => "   ",
 	});
 	check(`${label}: an empty render injects no message`, (await empty(event("manager", {}), {})) === undefined);
+
+	// The two-application manager has no snapshot to prefetch: its live state
+	// arrives from one tool call that reports both sides. It still needs the
+	// section, and the guidance still goes out every turn.
+	const staticInject = mod.createContextInjection({
+		section: "unity_blender",
+		customType: "unity_blender_context",
+		shouldInject: () => true,
+		getPrompt: () => "BINDER PROMPT",
+		staticContent: "call unity_blender_status first",
+	});
+	const staticSections = {};
+	const staticOut = await staticInject(event("You are the manager.", staticSections), {});
+	check(`${label}: static content lands in the section`, staticSections.unity_blender === "BINDER PROMPT");
+	check(`${label}: static content is injected verbatim`, staticOut?.message?.content === "call unity_blender_status first");
+	check(`${label}: static content is displayable`, staticOut?.message?.display === true);
+	// A child DOES still get the static guidance, unlike the snapshot. The child
+	// rule exists because a snapshot is the PARENT's and reads deictically
+	// ("your selection"); procedural guidance has no such content to be wrong
+	// about, and the hand-rolled handler this replaces sent it to children
+	// unconditionally. Suppressing it would be a behaviour change dressed up as
+	// a consistency fix.
+	const staticChildSections = {};
+	const staticChildOut = await staticInject(event(child, staticChildSections), {});
+	check(`${label}: static content reaches a child`, staticChildOut?.message?.content === "call unity_blender_status first");
+	check(`${label}: a child still gets the section`, staticChildSections.unity_blender === "BINDER PROMPT");
+
+	// Passing both is a caller bug, and a throw beats honouring one of them
+	// quietly -- a fetch paid for and discarded is a wasted bridge round trip.
+	let threw = false;
+	try {
+		mod.createContextInjection({
+			section: "unity_blender",
+			customType: "unity_blender_context",
+			getPrompt: () => "P",
+			staticContent: "text",
+			fetchState: async () => ({}),
+			formatState: () => "rendered",
+		});
+	} catch {
+		threw = true;
+	}
+	check(`${label}: passing both staticContent and fetchState throws`, threw);
 }
 
 /* --------------------------------------------------- the two agree in behaviour -- */

@@ -302,10 +302,32 @@ export function createContextInjection({
 	getPrompt,
 	fetchState,
 	formatState,
+	/**
+	 * Fixed text injected as the per-turn message, with no fetch at all.
+	 *
+	 * For the manager that drives two applications at once: its live state
+	 * arrives from ONE tool call that reports both sides, so there is nothing
+	 * to prefetch, and prefetching a second time would spend a bridge round
+	 * trip restating what a tool call the guidance already names will return.
+	 * The guidance is constant, and a constant message is re-sent every turn,
+	 * which is why it stays short here and the long form belongs in the system
+	 * section.
+	 *
+	 * Mutually exclusive with fetchState, and the check is a throw rather than
+	 * a silent branch: a caller passing both has a bug, and quietly honouring
+	 * one of them is how it survives.
+	 */
+	staticContent = null,
 	extraGuidance = () => [],
 	failureGuidance,
 	assumeNothingAbout = "selection, active object, viewport, or camera state",
 }) {
+	if (staticContent !== null && fetchState) {
+		throw new Error(
+			`createContextInjection("${section}"): pass staticContent or fetchState, not both. ` +
+				"Static content is injected verbatim, so a fetch would be paid for and discarded.",
+		);
+	}
 	return async function injectContext(event, ctx) {
 		// Never inject into a session that has not engaged. A tool call is not
 		// engagement: a plain session calling a blender_* tool is doing
@@ -316,6 +338,11 @@ export function createContextInjection({
 		// The constant prompt first, unconditionally (including for children):
 		// it is what teaches a subagent which side of the bridge it is on.
 		if (event.systemPromptOptions?.sections) event.systemPromptOptions.sections[section] = getPrompt();
+
+		// Static path: no snapshot rule, no failure rule, nothing to fetch.
+		if (staticContent !== null) {
+			return { message: { customType, content: staticContent, display: true } };
+		}
 
 		// Rule 2: the snapshot is the parent's, so a child never gets it.
 		if (readActiveAgentName(event.systemPrompt) !== null) return undefined;

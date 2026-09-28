@@ -107,10 +107,19 @@ export interface ContextInjectionOptions {
 	shouldInject?: () => boolean;
 	/** The constant prompt, usually a call to the extension's getManagerPrompt(). */
 	getPrompt: () => string;
-	/** Fetch the live state. Throwing means "unavailable", not "empty". */
-	fetchState: (ctx: unknown) => Promise<unknown>;
-	/** Render the live state, or return "" for nothing worth injecting. */
-	formatState: (state: unknown, options: { timeoutMs: number; extraGuidance: () => string[] }) => string;
+	/**
+	 * Fixed text injected as the per-turn message, with no fetch at all.
+	 *
+	 * For the manager that drives two applications at once: its live state
+	 * arrives from ONE tool call reporting both sides, so there is nothing to
+	 * prefetch. Supplying both this and `fetchState` throws, because honouring
+	 * either silently is how a caller that passed both survives.
+	 */
+	staticContent?: string | null;
+	/** Fetch the live state. Throwing means "unavailable", not "empty". Required unless `staticContent` is set. */
+	fetchState?: (ctx: unknown) => Promise<unknown>;
+	/** Render the live state, or return "" for nothing worth injecting. Required unless `staticContent` is set. */
+	formatState?: (state: unknown, options: { timeoutMs: number; extraGuidance: () => string[] }) => string;
 	/** Application-specific lines appended to a healthy snapshot. */
 	extraGuidance?: () => string[];
 	/**

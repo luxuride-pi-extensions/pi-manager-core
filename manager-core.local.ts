@@ -271,10 +271,23 @@ export type ContextInjectionHandler = (
  */
 export function createContextInjection(options: ContextInjectionOptions): ContextInjectionHandler {
 	const timeoutMs = options.timeoutMs ?? 30_000;
+	// Static content is injected verbatim, so passing a fetch as well would pay
+	// for a round trip and discard it. Throwing beats honouring one quietly.
+	if (options.staticContent != null && options.fetchState) {
+		throw new Error(
+			`createContextInjection("${options.section}"): pass staticContent or fetchState, not both. ` +
+				"Static content is injected verbatim, so a fetch would be paid for and discarded.",
+		);
+	}
 	return async function injectContext(event, ctx) {
 		if (options.shouldInject && !options.shouldInject()) return undefined;
 
 		if (event.systemPromptOptions?.sections) event.systemPromptOptions.sections[options.section] = options.getPrompt();
+
+		// Static path: no snapshot rule, no failure rule, nothing to fetch.
+		if (options.staticContent != null) {
+			return { message: { customType: options.customType, content: options.staticContent, display: true } };
+		}
 
 		// The snapshot is the parent's: a subagent's brief already names the
 		// objects it owns, and the snapshot's deictic framing would point it at
@@ -283,7 +296,7 @@ export function createContextInjection(options: ContextInjectionOptions): Contex
 
 		let content: string;
 		try {
-			content = options.formatState(await options.fetchState(ctx), {
+			content = options.formatState!(await options.fetchState!(ctx), {
 				timeoutMs,
 				extraGuidance: options.extraGuidance ?? (() => []),
 			});
