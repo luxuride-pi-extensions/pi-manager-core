@@ -30,7 +30,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { advisedToolNames } from "../shared/agent-template-checks.mjs";
+import { advisedToolNames, declaredTools } from "../shared/agent-template-checks.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "..");
@@ -43,6 +43,30 @@ const jiti = createJiti(import.meta.url, { isolated: true, interopDefault: true 
 
 /** Which names are pi tools, and so must resolve to something registered. */
 const TOOL_NAME = /^(?:blender|unity|unity_blender|vrchat)[a-z_]*_[a-z_]+$/;
+
+/**
+ * Tools that come from pi itself or from a package, not from an extension.
+ *
+ * The "every tool it declares is registered" check below is about the
+ * extension's own inventory, and pi core's read/write/edit/grep/find/ls/bash
+ * and the subagent suite's subagent/contact_supervisor are not in it -- they
+ * are ambient, exactly as pi-vibe-unity's own template test already records in
+ * its AMBIENT_TOOLS. The three provenances are listed separately on purpose:
+ * pi core, an npm `packages:` entry, and the extension, and only the last is
+ * something this file can see. Checking that a template does not name a tool
+ * from the other two would be asserting that pi stopped shipping read().
+ */
+const AMBIENT_TOOLS = new Set([
+	"subagent",
+	"contact_supervisor",
+	"read",
+	"write",
+	"edit",
+	"grep",
+	"find",
+	"ls",
+	"bash",
+]);
 
 /**
  * Each extension, the prompt that is its manager's whole instruction set, and
@@ -59,16 +83,53 @@ const TOOL_NAME = /^(?:blender|unity|unity_blender|vrchat)[a-z_]*_[a-z_]+$/;
  * mention tools in passing (a worked example is prose about a flow, and its
  * names are the ones most likely to be abbreviated or partial).
  */
+/**
+ * The worker/critic templates, and what each one's frontmatter must resolve to.
+ *
+ * `managerPrompt` is a single file, but these are per-agent and each is a
+ * complete instruction set for a child that has NO other source of truth: a
+ * worker told to call a tool it cannot reach has no manager to notice, because
+ * the manager is not in that context. The manager prompt gets a check because
+ * it is the one prompt everybody reads; these get one for the opposite reason —
+ * a mistake here is invisible from the outside, because the failing child
+ * reports it as a tool error and the parent reads a report saying the work was
+ * blocked.
+ *
+ * Every template is included, not just the ones that "matter". A template that
+ * is never spawned is a template that will be spawned one day, and its tool list
+ * is whatever it was the last time anybody edited it.
+ */
 const EXTENSIONS = [
 	{
 		repo: "pi-blender",
 		managerPrompt: "blender/agents/blender-manager.md",
+		// Everything except the manager, which is stripped and injected rather
+		// than spawned, and exchange.md, which is not an agent at all.
+		childPrompts: [
+			"blender/agents/blender-camera-aligner.md",
+			"blender/agents/blender-critic.md",
+			"blender/agents/blender-diagnostician.md",
+			"blender/agents/blender-finalizer.md",
+			"blender/agents/blender-merger.md",
+			"blender/agents/blender-reference-describer.md",
+			"blender/agents/blender-script-runner.md",
+			"blender/agents/blender-worker.md",
+		],
 		readmeTools: /`(blender_[a-z_]+)`/g,
 		readmeSkip: ["A session in the wild"],
 	},
 	{
 		repo: "pi-unity",
 		managerPrompt: "unity/agents/unity-manager.md",
+		childPrompts: [
+			"unity/agents/unity-critic.md",
+			"unity/agents/unity-diagnostician.md",
+			"unity/agents/unity-finalizer.md",
+			"unity/agents/unity-reference-describer.md",
+			"unity/agents/unity-worker.md",
+			"unity/agents/vrchat-unity-avatar.md",
+			"unity/agents/vrchat-unity-world.md",
+		],
 		readmeTools: /^\| `((?:unity|vrchat)[a-z_]*)`/gm,
 		readmeSkip: [],
 	},
@@ -78,6 +139,7 @@ const EXTENSIONS = [
 		// manager prompts, so the connector is what this scans; the side prompts
 		// live in the other two repos and are scanned there.
 		managerPrompt: "agents/unity-blender-manager.md",
+		childPrompts: ["agents/unity-blender-reference-describer.md"],
 		readmeTools: /`((?:unity_blender|unity|blender|vrchat)[a-z_]*)`/g,
 		readmeSkip: [],
 		/**
@@ -139,7 +201,14 @@ function withoutSections(markdown, titles) {
 	return out;
 }
 
-for (const { repo, managerPrompt, readmeTools, readmeSkip, alsoProvidedBy = [] } of EXTENSIONS) {
+for (const {
+	repo,
+	managerPrompt,
+	childPrompts = [],
+	readmeTools,
+	readmeSkip,
+	alsoProvidedBy = [],
+} of EXTENSIONS) {
 	const dir = join(PROJECTS, repo);
 	if (!existsSync(dir)) {
 		skipped.push(`${repo} (not checked out)`);
@@ -200,7 +269,53 @@ for (const { repo, managerPrompt, readmeTools, readmeSkip, alsoProvidedBy = [] }
 		`unscanned, so unchecked: ${[...new Set(unbackticked)].join(", ")}`,
 	);
 
-	// --- the README vs what is actually registered -----------------------
+	// --- the spawned agent templates vs what is actually registered ------
+	// A different question from the manager prompt's, and a stricter one in one
+	// respect. A spawned agent's tool access comes from its own `tools:`
+	// frontmatter, so a name in the body that is missing from that list is
+	// unreachable even though the tool exists -- and the installed-template check
+	// in agent-template-checks.mjs compares the body against the frontmatter
+	// without ever asking whether the frontmatter itself is real.
+	for (const childPrompt of childPrompts) {
+		const childPath = join(dir, childPrompt);
+		if (!existsSync(childPath)) {
+			check(`${repo}: ${childPrompt} exists`, false, childPath);
+			continue;
+		}
+		const source = readFileSync(childPath, "utf8");
+		const label = `${repo}: ${childPrompt}`;
+
+		const declared = [...declaredTools(source)];
+		const named = advisedToolNames(source).filter((name) => TOOL_NAME.test(name));
+
+		check(`${label} declares some tools`, declared.length > 0, `${declared.length} declared`);
+		// Only the extension's OWN tools. read/write/grep are pi's, subagent and
+		// contact_supervisor are the subagent package's, and neither is
+		// registered by an index.ts.
+		const ownDeclared = declared.filter((name) => !AMBIENT_TOOLS.has(name));
+		check(
+			`${label}: every tool it declares is registered`,
+			ownDeclared.filter((name) => !resolvable.has(name)).length === 0,
+			`declared but never registered: ${ownDeclared.filter((name) => !resolvable.has(name)).join(", ")}`,
+		);
+		check(
+			`${label}: every tool it names is registered`,
+			named.filter((name) => !resolvable.has(name)).length === 0,
+			`advises calling: ${named.filter((name) => !resolvable.has(name)).join(", ")}`,
+		);
+		// The direction that actually breaks a child at runtime: pi hands the
+		// agent its `tools:` list, so a body name outside it is a tool this agent
+		// cannot reach however real the tool is. agent-template-checks.mjs asserts
+		// this same invariant for the INSTALLED text; asserting it here as well
+		// means a source that drifts is caught in the repo that owns it, before
+		// anyone installs anything.
+		const unreachable = named.filter((name) => !declared.includes(name));
+		check(
+			`${label}: every tool it names is in its own tools:`,
+			unreachable.length === 0,
+			`named in the body, absent from frontmatter: ${unreachable.join(", ")}`,
+		);
+	}
 	const readmePath = join(dir, "README.md");
 	check(`${repo}: README.md exists`, existsSync(readmePath), readmePath);
 	if (!existsSync(readmePath)) continue;
