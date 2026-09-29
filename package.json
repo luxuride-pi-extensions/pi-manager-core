@@ -3,6 +3,7 @@
 	"version": "0.1.0",
 	"description": "pi extension: the shared core of the manager-mode extensions (engage command, manager gate, prompt composition, path resolution)",
 	"keywords": [
+		"pi-package",
 		"pi-extension",
 		"subagent",
 		"manager"
@@ -10,9 +11,14 @@
 	"private": true,
 	"type": "module",
 	"license": "MIT",
+	"pi": {
+		"extensions": [
+			"./index.ts"
+		]
+	},
 	"scripts": {
 		"typecheck": "tsc --noEmit",
-		"test": "node test/core.test.mjs && node test/agent-template-checks.test.mjs && node test/resolver-copies.mjs && node test/extension-registration.mjs && node test/allowlists.mjs",
+		"test": "node test/core.test.mjs && node test/agent-template-checks.test.mjs && node test/resolver-copies.mjs && node test/extension-registration.mjs && node test/allowlists.mjs && node test/dependency-declaration.mjs",
 		"check:consumers": "node test/resolver-copies.mjs",
 		"which-core": "node test/which-core.mjs",
 		"fix:consumers": "node test/resolver-copies.mjs --fix"

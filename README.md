@@ -35,6 +35,10 @@ Install alongside the extensions that use it, the same way they are installed:
 ln -s "$PWD" ~/.pi/agent/extensions/manager-core
 ```
 
+Or, as a package, from `package.json`'s `pi.extensions` manifest — `index.ts`
+sits at the package root rather than under `extensions/`, so that manifest is
+load-bearing, not a narrowing.
+
 Each consumer carries a working local copy, so installing one extension without
 this one still works. That is deliberate, and it is also the failure mode to watch
 for: a silent fallback runs fine and so reports nothing. `npm run which-core`
@@ -50,6 +54,27 @@ pi-unity-blender shared core
 
 OK: every consumer loads the shared core
 ```
+
+## How the consumers depend on it
+
+Each consumer declares the relationship, so it is recorded rather than implied
+by the resolver's probe order:
+
+```json
+"peerDependencies": { "pi-manager-core": "*" }
+```
+
+A peer, not a dependency, and unbundled — per `docs/packages.md`, an imported Pi
+package is a peer with a `*` range. A bundled copy would be a second core in
+`node_modules`, which the resolver never looks at, so it would be invisible drift
+rather than prevented drift.
+
+The entry is **not enforced by anything**. The consumers load as extensions out
+of `<agent-dir>/extensions/`, so pi never reads their `package.json` and npm
+never installs for them. That is exactly why the entry has a test:
+`test/dependency-declaration.mjs` fails if a consumer stops declaring it, if the
+core stops being installable as a package, or if a consumer bundles a second
+copy. The declaration is only worth having because something checks it.
 
 ## Drift protection
 
