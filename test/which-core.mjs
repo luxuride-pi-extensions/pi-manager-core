@@ -1,15 +1,15 @@
 /**
  * Which core does each consumer actually load?
  *
- * Answers the question a test cannot: not "is the fallback present" but "is the
- * SHARED core the one in use". The resolver probes several locations in order,
- * so a working extension tells you nothing about which one it used — and the
- * failure this guards is exactly a silent fallback that works fine and so
- * reports nothing.
+ * There is no fallback any more, so this is now a simpler question than it was:
+ * a missing core throws, and the throw names every path that was tried. What it
+ * still catches is the case a throwing resolver cannot: a core that resolves to
+ * some OTHER checkout, so a consumer is silently running against a version that
+ * is not the one installed. It prints which directory each consumer resolved
+ * from, and fails if two consumers resolved from different places.
  *
- * Prints one line per consumer: the resolved source, and whether the stand-in
- * was used. Exits non-zero if any consumer is on its local copy, so this can
- * gate an install check.
+ * Exits non-zero if any consumer failed to resolve, or if they disagree about
+ * where the core lives, so this can gate an install check.
  */
 
 import { readdirSync, existsSync } from "node:fs";
@@ -24,7 +24,9 @@ const PI_AGENT_DIR = join(process.env.PI_AGENT_DIR?.trim() || join(homedir(), ".
 const installedCore = join(PI_AGENT_DIR, "extensions", "manager-core", "shared", "core.js");
 console.log(`shared core installed: ${existsSync(installedCore) ? "yes" : "NO"}  (${installedCore})\n`);
 
-let anyFallback = false;
+let failed = false;
+const resolvedFrom = new Map();
+
 for (const name of ["pi-vibe-blender", "pi-vibe-unity", "pi-unity-blender"]) {
 	const dir = join(REPO_ROOT, "..", name);
 	if (!existsSync(dir)) {
@@ -32,15 +34,33 @@ for (const name of ["pi-vibe-blender", "pi-vibe-unity", "pi-unity-blender"]) {
 		continue;
 	}
 	const resolver = await jiti.import(join(dir, "manager-core.ts"));
-	// Probe the candidate list the same way the resolver does, by asking it for
-	// the real core rather than the wrapped local.
-	const core = resolver.loadManagerCore();
-	const standIn = core.__managerCoreUnavailable === true;
-	if (standIn) anyFallback = true;
-	const marker = standIn ? "LOCAL FALLBACK" : "shared core";
-	console.log(`${name.padEnd(16)} ${marker}`);
-	if (standIn) console.log(`                 ${resolver.describeMissingCore()}`);
+	try {
+		resolver.loadManagerCore();
+	} catch (error) {
+		failed = true;
+		console.log(`${name.padEnd(16)} FAILED`);
+		console.log(`                 ${String(error.message).split(". ")[0]}.`);
+		continue;
+	}
+	// Ask the resolver which directory it settled on, so two consumers resolving
+	// from different checkouts is visible rather than merely working.
+	const source = resolver.describeResolvedCoreSource?.() ?? "(unknown)";
+	resolvedFrom.set(name, source);
+	console.log(`${name.padEnd(16)} shared core  <- ${source}`);
 }
 
-console.log(`\n${anyFallback ? "FAIL" : "OK"}: ${anyFallback ? "at least one consumer is on its local copy" : "every consumer loads the shared core"}`);
-process.exit(anyFallback ? 1 : 0);
+const distinct = new Set(resolvedFrom.values());
+if (distinct.size > 1) {
+	failed = true;
+	console.log(`\nFAIL: the consumers resolved the core from ${distinct.size} different places:`);
+	for (const [name, source] of resolvedFrom) console.log(`  ${name}: ${source}`);
+}
+
+console.log(
+	`\n${failed ? "FAIL" : "OK"}: ${
+		failed
+			? "at least one consumer has no core, or the consumers disagree about which one"
+			: `every consumer loads the shared core${distinct.size === 1 ? ` (${[...distinct][0]})` : ""}`
+	}`,
+);
+process.exit(failed ? 1 : 0);

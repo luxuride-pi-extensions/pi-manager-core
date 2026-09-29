@@ -1,19 +1,19 @@
 /**
- * Behavioural tests for the shared core, and for the local fallback.
+ * Behavioural tests for the shared core.
  *
- * The two are tested through the SAME assertions on purpose. The fallback is a
- * copy, and a copy that drifts from the original is the exact failure
- * pi-manager-core exists to remove — so the suite runs against both and fails
- * if either changes behaviour. `resolver-copies.mjs` checks the copies are
- * byte-identical; this checks the SHARED CORE and the CANONICAL FALLBACK agree
- * in behaviour, which is the property that matters when one of them is the one
- * a user is actually running.
+ * This used to run every assertion twice, once against the core and once against
+ * a per-consumer fallback copy, because a copy that drifts is the exact failure
+ * pi-manager-core exists to remove. There is no fallback any more: a missing
+ * core is a hard error. The cross-check that replaced the second run is at the
+ * bottom, and it guards the same property from the other side — the shim's
+ * declared `ManagerCore` contract and the core's real exports have to name the
+ * same things, which is what the old type-source fallback used to guarantee.
  *
  * No framework: the assertions are a few dozen and each names the property it
  * protects, which reads better in plain output than under a runner's reporter.
  */
 
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,7 +23,6 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const jiti = createJiti(import.meta.url);
 
 const core = await jiti.import(join(REPO, "shared", "core.js"));
-const local = await jiti.import(join(REPO, "manager-core.local.ts"));
 
 let passed = 0;
 const failures = [];
@@ -45,10 +44,7 @@ writeFileSync(
 	["---", "name: manager", "tools: read, write", "thinking: high", "---", "", "# Body", "", "Do the thing."].join("\n"),
 );
 
-for (const [label, mod] of [
-	["core", core],
-	["local", local],
-]) {
+for (const [label, mod] of [["core", core]]) {
 	check(`${label}: frontmatter stripped`, mod.stripFrontmatter("---\ntools: x\n---\nBody") === "Body");
 	check(`${label}: a body without frontmatter is untouched`, mod.stripFrontmatter("Just text") === "Just text");
 	check(`${label}: empty input does not throw`, mod.stripFrontmatter(null) === "");
@@ -76,10 +72,7 @@ mkdirSync(join(sideDir, "agents"), { recursive: true });
 writeFileSync(join(sideDir, "agents", "fake-manager.md"), "---\nname: m\n---\n\n## SIDE BODY MARKER\n");
 writeFileSync(join(sideDir, "agents", "exchange.md"), "## EXCHANGE MARKER\n");
 
-for (const [label, mod] of [
-	["core", core],
-	["local", local],
-]) {
+for (const [label, mod] of [["core", core]]) {
 	const prompt = mod.composeManagerPrompt({
 		connectorPath: goodPrompt,
 		connectorRole: "unity-blender manager",
@@ -119,10 +112,7 @@ for (const [label, mod] of [
 
 /* -------------------------------------------------------------- manager gate -- */
 
-for (const [label, mod] of [
-	["core", core],
-	["local", local],
-]) {
+for (const [label, mod] of [["core", core]]) {
 	const mode = mod.createManagerMode({ allowedTools: ["read", "todo", "bash"] });
 	const event = (toolName) => ({ toolName, input: {} });
 	const manager = "You are the manager.";
@@ -171,10 +161,7 @@ function mod_default_block(mode, event, systemPrompt, label) {
 
 /* ------------------------------------------- application refusals are additive -- */
 
-for (const [label, mod] of [
-	["core", core],
-	["local", local],
-]) {
+for (const [label, mod] of [["core", core]]) {
 	let called = 0;
 	const mode = mod.createManagerMode({
 		allowedTools: ["read"],
@@ -199,10 +186,7 @@ for (const [label, mod] of [
 
 /* ------------------------------------------------------ context injection -- */
 
-for (const [label, mod] of [
-	["core", core],
-	["local", local],
-]) {
+for (const [label, mod] of [["core", core]]) {
 	const event = (systemPrompt, sections) => ({ systemPrompt, systemPromptOptions: { sections } });
 	const child = "manager prompt\n<active_agent name=\"blender-worker\">";
 
@@ -340,21 +324,40 @@ for (const [label, mod] of [
 	check(`${label}: sectionReachesChildren:false still gives the parent the section`, parentSections.unity_blender === "CONNECTOR PROMPT");
 }
 
-/* --------------------------------------------------- the two agree in behaviour -- */
+/* ------------------------------------------- the shim contract matches reality -- */
 
-// A cheap cross-check that the copy has not diverged: both must export the
-// same surface, and the child's regex must be the same pattern.
-const coreExports = Object.keys(core).filter((k) => k !== "default").sort();
-const localExports = Object.keys(local).filter((k) => k !== "default").sort();
-check(
-	"the local fallback exports the same surface as the core",
-	JSON.stringify(coreExports) === JSON.stringify(localExports),
-	`core: ${coreExports.join(",")} | local: ${localExports.join(",")}`,
-);
-check(
-	"the child-session regex is identical",
-	core.CHILD_AGENT_PROMPT_PATTERN.source === local.CHILD_AGENT_PROMPT_PATTERN.source,
-);
+// The shim can no longer derive its `ManagerCore` type from a local copy: that
+// path is computed at runtime, so no compiler can see it, and the old fallback
+// was doubling as the type source. The type is now written out by hand in
+// manager-core.ts, which moves the guarantee from compile time to here.
+//
+// So this checks the SAME property the fallback used to give for free, in both
+// directions, because both failures are quiet. A name the contract declares
+// that the core does not have is a crash in a consumer, at a call site, weeks
+// later. A name the core has that the contract does not declare is a consumer
+// that cannot use the new export until the shim is updated and recopied --
+// which is how a core fix silently fails to reach the extensions.
+const shim = readFileSync(join(REPO, "manager-core.ts"), "utf8");
+const contract = shim.slice(shim.indexOf("export interface ManagerCore {"), shim.indexOf("\n}\n", shim.indexOf("export interface ManagerCore {")));
+const declared = [...contract.matchAll(/^\t([A-Za-z_][A-Za-z0-9_]*)[?]?[:(]/gm)].map((m) => m[1]).sort();
+const actual = Object.keys(core).filter((k) => k !== "default").sort();
+
+for (const name of declared) {
+	check(
+		`the shim contract declares ${name}, and the core has it`,
+		name in core,
+		`the core exports: ${actual.join(",")}`,
+	);
+}
+for (const name of actual) {
+	check(
+		`the core exports ${name}, and the shim contract declares it`,
+		declared.includes(name),
+		`the contract declares: ${declared.join(",")}`,
+	);
+}
+check("the shim contract is not empty", declared.length > 0, `parsed: ${contract.slice(0, 120)}`);
+
 check(
 	"the child-session regex captures the name",
 	core.readActiveAgentName('x <active_agent name="unity-worker">') === "unity-worker",

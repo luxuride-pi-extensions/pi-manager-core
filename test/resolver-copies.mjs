@@ -10,11 +10,12 @@
  * copy was individually reasonable. A test that diffs the copies is the first
  * thing in this family that makes drift LOUD.
  *
- * What is deliberately NOT unified by this test: the fallback. Each consumer
- * keeps a local copy of the shared mechanism so it works without manager-core
- * installed, and those three copies are compared here too, because a fix to the
- * mechanism has to land in all three or the fallback behaves differently
- * depending on which extension the user has.
+ * What else is deliberately NOT unified by this test: nothing, and that is the
+ * point. The per-consumer fallback copies are gone. They used to be compared
+ * here too, which made the duplication look maintained — but a fallback that a
+ * consumer installed alone never re-tests is a fork that ships, and a fork that
+ * ships is the failure this repository exists to prevent. A missing core is now
+ * a hard error, so there is no second copy that could drift.
  *
  * The shared agent-template checks are compared for a sharper reason: they were
  * written once, in the binder, and the other two installers had neither of
@@ -36,22 +37,21 @@ const REPO = resolve(HERE, "..");
 const PROJECTS = resolve(REPO, "..");
 const FIX = process.argv.includes("--fix");
 
-/** The consumers and where their shim, local core and shared checks live. */
+/** The consumers, and the two files each carries a copy of. */
 const CONSUMERS = [
-	{ repo: "pi-vibe-blender", shim: "manager-core.ts", local: "manager-core.local.ts", checks: "scripts/agent-template-checks.mjs" },
-	{ repo: "pi-vibe-unity", shim: "manager-core.ts", local: "manager-core.local.ts", checks: "scripts/agent-template-checks.mjs" },
-	{ repo: "pi-unity-blender", shim: "manager-core.ts", local: "manager-core.local.ts", checks: "scripts/agent-template-checks.mjs" },
+	{ repo: "pi-vibe-blender", shim: "manager-core.ts", checks: "scripts/agent-template-checks.mjs" },
+	{ repo: "pi-vibe-unity", shim: "manager-core.ts", checks: "scripts/agent-template-checks.mjs" },
+	{ repo: "pi-unity-blender", shim: "manager-core.ts", checks: "scripts/agent-template-checks.mjs" },
 ];
 
 const canonicalResolver = readFileSync(join(REPO, "manager-core.ts"), "utf8");
-const canonicalLocal = readFileSync(join(REPO, "manager-core.local.ts"), "utf8");
 const canonicalChecks = readFileSync(join(REPO, "shared", "agent-template-checks.mjs"), "utf8");
 
 let checked = 0;
 let problems = 0;
 const skipped = [];
 
-for (const { repo, shim, local, checks } of CONSUMERS) {
+for (const { repo, shim, checks } of CONSUMERS) {
 	const dir = join(PROJECTS, repo);
 	if (!existsSync(dir)) {
 		skipped.push(`${repo} (not checked out)`);
@@ -60,7 +60,6 @@ for (const { repo, shim, local, checks } of CONSUMERS) {
 
 	for (const [name, expected] of [
 		[shim, canonicalResolver],
-		[local, canonicalLocal],
 		[checks, canonicalChecks],
 	]) {
 		const path = join(dir, name);

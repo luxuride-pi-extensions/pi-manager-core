@@ -39,20 +39,28 @@ Or, as a package, from `package.json`'s `pi.extensions` manifest — `index.ts`
 sits at the package root rather than under `extensions/`, so that manifest is
 load-bearing, not a narrowing.
 
-Each consumer carries a working local copy, so installing one extension without
-this one still works. That is deliberate, and it is also the failure mode to watch
-for: a silent fallback runs fine and so reports nothing. `npm run which-core`
-answers the question a test cannot — *which* core is actually loaded.
+**A missing core is a hard error.** Each consumer used to carry a 420-line local
+copy of the whole mechanism, so an extension installed on its own still ran. That
+bought a friendly solo install and cost the one thing this repository exists to
+protect: the fallback was the only code here that could go stale with no test
+shipping beside it, because a consumer installed alone never runs this suite. So
+the fallback ran, worked, and reported nothing while being a fork. `loadManagerCore()`
+now throws, and the message names every path it tried and how to fix it — a
+startup error beats a quietly-forked core.
+
+`npm run which-core` checks what a throwing resolver cannot: that the consumers
+resolved the core from the *same* place, rather than one quietly using another
+checkout.
 
 ```
 $ npm run which-core
 shared core installed: yes  (~/.pi/agent/extensions/manager-core/shared/core.js)
 
-pi-vibe-blender  shared core
-pi-vibe-unity    shared core
-pi-unity-blender shared core
+pi-vibe-blender  shared core  <- ~/.pi/agent/extensions/manager-core
+pi-vibe-unity    shared core  <- ~/.pi/agent/extensions/manager-core
+pi-unity-blender shared core  <- ~/.pi/agent/extensions/manager-core
 
-OK: every consumer loads the shared core
+OK: every consumer loads the shared core (~/.pi/agent/extensions/manager-core)
 ```
 
 ## How the consumers depend on it
@@ -78,10 +86,10 @@ copy. The declaration is only worth having because something checks it.
 
 ## Drift protection
 
-Each consumer keeps a ~30-line `manager-core.ts` that finds this directory and
-re-exports it, because a bare `import` of a sibling extension's file cannot be
-written without a build step or a package link. Those three copies are
-byte-identical by construction and verified as such:
+Each consumer keeps a `manager-core.ts` that finds this directory and re-exports
+it, because a bare `import` of a sibling extension's file cannot be written
+without a build step or a package link. Those three copies are byte-identical by
+construction and verified as such:
 
 ```sh
 npm test              # core tests, template checks, and the drift check
@@ -91,10 +99,13 @@ npm run fix:consumers # rewrite the copies from the canonical ones here
 
 A convention is what already failed three times, so the check is a test.
 
-`manager-core.local.ts` is the canonical fallback copy, itself checked for
-behavioural agreement with `shared/core.js` in `test/core.test.mjs` — that suite
-runs the same assertions against both, because a copy that drifts from the
-original is the exact failure this repository exists to remove.
+There is no fallback to check any more, which is why there are two files per
+consumer rather than three. What replaced the type-safety the fallback used to
+provide: the shim's `ManagerCore` contract is now written out by hand, and
+`test/core.test.mjs` compares it against the core's real exports **in both
+directions**. A name the contract declares that the core lacks is a crash in a
+consumer weeks later; a name the core has that the contract omits is a core fix
+that silently never reaches the extensions. Both are quiet, so both are tested.
 
 ## Layout
 
@@ -103,8 +114,7 @@ original is the exact failure this repository exists to remove.
 | `index.ts` | The extension entry point. No tools, no commands; reports a missing core or consumer once at session start. Deliberately one small file: it exists only to give the core an installed directory, so there is nothing to split. |
 | `shared/` | The core itself, as plain ESM JavaScript with a hand-written `.d.ts` per module. Plain JS on purpose: a runtime `import()` of a resolved path must work with no transform step. Split by concern into `paths.js`, `prompts.js`, `session.js`, `manager-mode.js`, `context-injection.js`, `commands.js`. |
 | `shared/index.js` | The barrel the six modules are re-exported through. |
-| `shared/core.js` | The stable entry point a consumer resolves, re-exporting the barrel. Kept as a separate file because four copies of this path and a resolver that names it are not something to churn for a source-layout decision. |
+| `shared/core.js` | The stable entry point a consumer resolves, re-exporting the barrel. Kept as a separate file because the resolver names this exact path and churning it for a source-layout decision would be churn with no payoff. |
 | `shared/core.d.ts` | The same split for types, and the single declaration path a typed consumer resolves. |
-| `manager-core.ts` | The canonical resolver shim, copied byte-for-byte into each consumer. **Do not edit the copies.** |
-| `manager-core.local.ts` | The canonical fallback, copied into each consumer as `manager-core.local.ts`. Not split, on purpose: it is the whole point of the file that a consumer with no core installed still works, and a self-contained single file is the only shape that survives that. |
+| `manager-core.ts` | The canonical resolver shim, copied byte-for-byte into each consumer. **Do not edit the copies.** Throws when the core is missing; declares the `ManagerCore` contract by hand, checked against the real exports in both directions. |
 | `shared/agent-template-checks.mjs` | Validation shared by the three installers, so a template cannot ship naming a tool it cannot resolve. |
