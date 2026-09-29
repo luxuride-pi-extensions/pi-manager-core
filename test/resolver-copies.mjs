@@ -79,11 +79,16 @@ for (const { repo, shim, checks } of CONSUMERS) {
 			console.log(`ok ${repo}/${name}`);
 			continue;
 		}
-		problems += 1;
 		if (FIX) {
+			// Only a REAL problem counts once fixed. Counting it anyway made the
+			// run that repairs the drift exit non-zero and report the same count
+			// of problems, which reads as "the fix did not work" — so the exit
+			// code was the opposite of what it says. `--fix` is run in a loop by
+			// anyone changing the canonical file, so that ambiguity is expensive.
 			writeFileSync(path, expected);
 			console.log(`  rewrote ${path} (${diffLine(expected, actual)} lines differ)`);
 		} else {
+			problems += 1;
 			console.error(`DRIFT ${repo}/${name} — ${diffLine(expected, actual)} lines differ; run --fix`);
 		}
 	}

@@ -159,6 +159,46 @@ function mod_default_block(mode, event, systemPrompt, label) {
 	return true;
 }
 
+/* ----------------------------------------------------------------- roster -- */
+
+for (const [label, mod] of [["core", core]]) {
+	// `subagent` is on every manager's allowlist, because delegating IS the
+	// manager's job. So a roster check placed after the allowlist never fires
+	// and still reads as protection. Asserted here for that reason specifically.
+	const mode = mod.createManagerMode({
+		allowedTools: ["read", "subagent", "todo"],
+		agentRoster: ["unity-worker", "unity-critic"],
+	});
+	mode.markEngaged();
+	const spawn = (input) => ({ toolName: "subagent", input });
+
+	check(`${label}: a roster member spawns`, mode.checkToolCall(spawn({ agent: "unity-worker" }), "x") === null);
+	const off = mode.checkToolCall(spawn({ agent: "some-other-writer" }), "x");
+	check(`${label}: a non-member is refused`, off?.block === true);
+	check(`${label}: the refusal names the roster`, /unity-worker, unity-critic/.test(off?.reason ?? ""));
+	check(`${label}: the refusal names the way out`, /say so in your report/.test(off?.reason ?? ""));
+
+	// Management/control actions carry no `agent`, so refusing them would make
+	// the manager unable to ask what its own children are doing.
+	check(`${label}: a management action is not a spawn`, mode.checkToolCall(spawn({ action: "status" }), "x") === null);
+	check(`${label}: whitespace is not an agent name`, mode.checkToolCall(spawn({ agent: "  " }), "x") === null);
+	check(`${label}: the roster does not loosen the allowlist`, mode.checkToolCall({ toolName: "bash", input: {} }, "x")?.block === true);
+
+	const open = mod.createManagerMode({ allowedTools: ["subagent"] });
+	open.markEngaged();
+	check(`${label}: no roster means no roster constraint`, open.checkToolCall(spawn({ agent: "anyone" }), "x") === null);
+}
+
+// A child subagent is a worker, not the manager, and inherits nothing of the
+// roster. Asserted because the roster sits in the manager path only.
+for (const [label, mod] of [["core", core]]) {
+	const mode = mod.createManagerMode({ allowedTools: [], agentRoster: ["unity-worker"] });
+	mode.markEngaged();
+	const child = `<active_agent name="unity-worker">`;
+	check(`${label}: a child subagent is not the manager`, mode.isManagerSession(child) === false);
+	check(`${label}: a child subagent is not roster-checked`, mode.checkToolCall({ toolName: "subagent", input: { agent: "other" } }, child) === null);
+}
+
 /* ------------------------------------------- application refusals are additive -- */
 
 for (const [label, mod] of [["core", core]]) {

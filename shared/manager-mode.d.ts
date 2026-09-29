@@ -17,10 +17,19 @@ export interface ManagerModeOptions {
 	/** Tool names the manager keeps, e.g. text reads, todo, supervisor. */
 	allowedTools?: readonly string[];
 	/**
-	 * Application-specific refusals, consulted BEFORE the allowlist so a coarse
-	 * allowlist cannot short-circuit a specific refusal. Return null when the
-	 * application has no opinion, to fall through to the allowlist and then to
-	 * the default refusal.
+	 * Agent names this manager may spawn. The NAMES are the application's; the
+	 * rule that only those may be spawned is enforced by the core, so it cannot
+	 * drift from the mechanism the way a per-consumer copy did.
+	 *
+	 * Empty or absent means no constraint, which is the correct default for a
+	 * session that is not a manager at all.
+	 */
+	agentRoster?: readonly string[];
+	/**
+	 * Application-specific refusals, consulted BEFORE the allowlist and the
+	 * roster so a coarse allowlist cannot short-circuit a specific refusal.
+	 * Return null when the application has no opinion, to fall through to the
+	 * roster, then the allowlist, then the default refusal.
 	 */
 	onGateMessage?: (event: ToolCallEvent) => ToolCallRefusal | null;
 }

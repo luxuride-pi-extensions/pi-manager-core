@@ -4,8 +4,15 @@
  *
  * Its own file because the gate is the core's only piece of STATE, and because
  * it is the part with a policy/mechanism seam: the mechanism (engaged flag,
- * child exemption, deny-by-default fallthrough) is identical everywhere, while
- * the refusals are each application's alone.
+ * child exemption, deny-by-default fallthrough, roster) is identical
+ * everywhere, while the refusals are each application's alone.
+ *
+ * The roster is here rather than in a consumer because the SAME rule was
+ * implemented in one extension and missing from two, and the two that missed it
+ * shipped a manager that could spawn a writer and walk straight past the very
+ * write refusal it advertises in its own exit command. The list of names is the
+ * application's; the rule that only those names may be spawned is not, and a
+ * rule that lives next to its only implementation cannot drift from it.
  */
 
 import { readActiveAgentName } from "./session.js";
@@ -25,8 +32,13 @@ import { readActiveAgentName } from "./session.js";
  * which are the single most context-expensive thing in the loop — is refused in
  * the manager and permitted everywhere else.
  */
-export function createManagerMode({ allowedTools, onGateMessage } = {}) {
+export function createManagerMode({ allowedTools, agentRoster, onGateMessage } = {}) {
 	const allowed = new Set(allowedTools ?? []);
+	// Only a NON-EMPTY roster constrains spawning. An empty or absent one leaves
+	// spawning alone, which is the correct default for a session that is not a
+	// manager at all.
+	const roster = new Set(agentRoster ?? []);
+	const hasRoster = roster.size > 0;
 	let engaged = false;
 	let gated = false;
 
@@ -86,8 +98,26 @@ export function createManagerMode({ allowedTools, onGateMessage } = {}) {
 		// `onGateMessage` returning null means "not mine", so an application that
 		// has no opinion still falls through to the allowlist and then to the
 		// default below. Order, not a flag, is what keeps both halves working.
+		// Order matters twice here, and both times it was got wrong first.
+		// `onGateMessage` is consulted BEFORE the allowlist, because the
+		// allowlist is coarse (a manager is allowed to `read` files) while a
+		// refusal is specific (a manager is not allowed to `read` an image, even
+		// though `read` is allowed). Checking the allowlist first lets it
+		// short-circuit the refusals, which is a silent loss of policy: nothing
+		// reports the refusal as unreachable, it just stops firing.
+		//
+		// The roster is checked in the same place, for the same reason and then
+		// some: `subagent` IS on every manager's allowlist, because delegating is
+		// the manager's job. Behind the allowlist the roster check is dead code
+		// that reads as protection.
+		//
+		// `onGateMessage` returning null means "not mine", so an application that
+		// has no opinion still falls through to the roster, the allowlist, and
+		// then the default below. Order, not a flag, is what keeps all of it.
 		const extra = typeof onGateMessage === "function" ? onGateMessage(event) : null;
 		if (extra) return extra;
+		const offRoster = checkRoster(event, roster, hasRoster);
+		if (offRoster) return offRoster;
 		if (allowed.has(event.toolName)) return null;
 		return {
 			block: true,
@@ -99,16 +129,42 @@ export function createManagerMode({ allowedTools, onGateMessage } = {}) {
 	 * Install the gate on a pi instance.
 	 *
 	 * `onGateMessage` is where an application keeps its own refusals — the
-	 * Blender manager's three (write/edit, a subagent outside the roster, and
-	 * reading an image) are all application-specific and none of them belong
-	 * in a shared core. A core that encoded them would carry every
-	 * application's policy and answer to none of them.
-	 */
-	function install(pi) {
+	 * Blender manager's remaining two (write/edit and reading an image) are
+	 * both application-specific and neither belongs in a shared core. A core
+	 * that encoded them would carry every application's policy and answer to
+	 * none of them. The roster is the counter-example: its RULE belongs here,
+	 * its NAMES do not.
+	 */	function install(pi) {
 		pi.on("tool_call", (event, ctx) => checkToolCall(event, ctx.getSystemPrompt()));
 	}
 
 	return { markEngaged, clearGate, isEngaged, isManagerSession, reset, checkToolCall, install };
+}
+
+/**
+ * Refuse a spawn of an agent outside the roster.
+ *
+ * `agent` is absent for management/control actions (status, list, stop, resume),
+ * so only a one-child spawn is constrained. That is deliberate: refusing
+ * `status` because it carries no agent name would make the manager unable to
+ * find out what its own children are doing.
+ *
+ * The refusal names the way out. "Not in the roster" alone reads as a dead end
+ * and produces a manager that stalls or reaches for an unrelated agent, which is
+ * the exact failure the roster exists to prevent.
+ */
+function checkRoster(event, roster, hasRoster) {
+	if (!hasRoster || event.toolName !== "subagent") return null;
+	const target = typeof event.input?.agent === "string" ? event.input.agent.trim() : "";
+	if (target.length === 0 || roster.has(target)) return null;
+	return {
+		block: true,
+		reason:
+			`Manager role: you may only spawn ${[...roster].join(", ")}. "${target}" is not one of them, and ` +
+			"each of those already owns a distinct job in this build, so spawning something else means " +
+			"reassigning work that has an owner. If none of them covers a capability you need, say so in " +
+			"your report rather than reaching for an unrelated agent.",
+	};
 }
 
 function defaultGateReason(toolName) {
