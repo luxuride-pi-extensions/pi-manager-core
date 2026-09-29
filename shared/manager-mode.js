@@ -88,17 +88,8 @@ export function createManagerMode({ allowedTools, agentRoster, onGateMessage } =
 	 */
 	function checkToolCall(event, systemPrompt) {
 		if (!isManagerSession(systemPrompt)) return null;
-		// The application's refusals are consulted BEFORE the allowlist, because
-		// the allowlist is coarse (a manager is allowed to `read` files) while a
-		// refusal is specific (a manager is not allowed to `read` an image, even
-		// though `read` is allowed). Checking the allowlist first lets it
-		// short-circuit the refusals, which is a silent loss of policy: nothing
-		// reports the refusal as unreachable, it just stops firing.
+		// Order matters here, and it was got wrong first, twice.
 		//
-		// `onGateMessage` returning null means "not mine", so an application that
-		// has no opinion still falls through to the allowlist and then to the
-		// default below. Order, not a flag, is what keeps both halves working.
-		// Order matters twice here, and both times it was got wrong first.
 		// `onGateMessage` is consulted BEFORE the allowlist, because the
 		// allowlist is coarse (a manager is allowed to `read` files) while a
 		// refusal is specific (a manager is not allowed to `read` an image, even
@@ -134,7 +125,8 @@ export function createManagerMode({ allowedTools, agentRoster, onGateMessage } =
 	 * that encoded them would carry every application's policy and answer to
 	 * none of them. The roster is the counter-example: its RULE belongs here,
 	 * its NAMES do not.
-	 */	function install(pi) {
+	 */
+	function install(pi) {
 		pi.on("tool_call", (event, ctx) => checkToolCall(event, ctx.getSystemPrompt()));
 	}
 
