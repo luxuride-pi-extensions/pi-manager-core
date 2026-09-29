@@ -75,8 +75,11 @@ original is the exact failure this repository exists to remove.
 
 | Path | What it is |
 | --- | --- |
-| `index.ts` | The extension entry point. No tools, no commands; reports a missing core or consumer once at session start. |
-| `shared/core.js` | The core itself, as plain ESM JavaScript with a hand-written `core.d.ts`. Plain JS on purpose: a runtime `import()` of a resolved path must work with no transform step. |
+| `index.ts` | The extension entry point. No tools, no commands; reports a missing core or consumer once at session start. Deliberately one small file: it exists only to give the core an installed directory, so there is nothing to split. |
+| `shared/` | The core itself, as plain ESM JavaScript with a hand-written `.d.ts` per module. Plain JS on purpose: a runtime `import()` of a resolved path must work with no transform step. Split by concern into `paths.js`, `prompts.js`, `session.js`, `manager-mode.js`, `context-injection.js`, `commands.js`. |
+| `shared/index.js` | The barrel the six modules are re-exported through. |
+| `shared/core.js` | The stable entry point a consumer resolves, re-exporting the barrel. Kept as a separate file because four copies of this path and a resolver that names it are not something to churn for a source-layout decision. |
+| `shared/core.d.ts` | The same split for types, and the single declaration path a typed consumer resolves. |
 | `manager-core.ts` | The canonical resolver shim, copied byte-for-byte into each consumer. **Do not edit the copies.** |
-| `manager-core.local.ts` | The canonical fallback, copied into each consumer as `manager-core.local.ts`. |
+| `manager-core.local.ts` | The canonical fallback, copied into each consumer as `manager-core.local.ts`. Not split, on purpose: it is the whole point of the file that a consumer with no core installed still works, and a self-contained single file is the only shape that survives that. |
 | `shared/agent-template-checks.mjs` | Validation shared by the three installers, so a template cannot ship naming a tool it cannot resolve. |
