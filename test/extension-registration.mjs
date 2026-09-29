@@ -24,8 +24,8 @@ const jiti = createJiti(import.meta.url, { isolated: true, interopDefault: true 
 const REPO_ROOT = join(import.meta.dirname, "..");
 
 const MODULES = {
-	"pi-vibe-blender": "index.ts",
-	"pi-vibe-unity": "index.ts",
+	"pi-blender": "index.ts",
+	"pi-unity": "index.ts",
 	"pi-unity-blender": "index.ts",
 };
 

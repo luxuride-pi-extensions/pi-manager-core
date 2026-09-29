@@ -6,7 +6,7 @@
  * shared core from, and so there is exactly one place where that core's
  * location, version and presence are checked.
  *
- * Why a shared core at all. Three extensions — pi-vibe-blender, pi-vibe-unity
+ * Why a shared core at all. Three extensions — pi-blender, pi-unity
  * and pi-unity-blender — each grew the same machinery independently: an engage
  * slash command that turns the session into a manager, an exit command that
  * lifts a write/edit/image gate, a child-session detector, a manager-prompt
@@ -68,7 +68,7 @@ export interface CoreHealth {
 	problems: string[];
 }
 
-const CONSUMERS = ["vibe-blender", "vibe-unity", "unity-blender"];
+const CONSUMERS = ["pi-blender", "pi-unity", "unity-blender"];
 
 /** Report whether the core is usable and who is using it. Read-only. */
 export function getCoreHealth(piAgentDir: string): CoreHealth {

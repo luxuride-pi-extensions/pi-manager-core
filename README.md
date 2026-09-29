@@ -9,8 +9,8 @@ checked.
 
 ## Why a shared core exists
 
-Three extensions — [pi-vibe-blender](../pi-vibe-blender),
-[pi-vibe-unity](../pi-vibe-unity) and [pi-unity-blender](../pi-unity-blender) —
+Three extensions — [pi-blender](../pi-blender),
+[pi-unity](../pi-unity) and [pi-unity-blender](../pi-unity-blender) —
 each grew the same machinery independently: an engage slash command that turns the
 session into a manager, an exit command that lifts a write/edit/image gate, a
 child-session detector, a manager-prompt composer, and an installer that stamps
@@ -56,8 +56,8 @@ checkout.
 $ npm run which-core
 shared core installed: yes  (~/.pi/agent/extensions/manager-core/shared/core.js)
 
-pi-vibe-blender  shared core  <- ~/.pi/agent/extensions/manager-core
-pi-vibe-unity    shared core  <- ~/.pi/agent/extensions/manager-core
+pi-blender  shared core  <- ~/.pi/agent/extensions/manager-core
+pi-unity    shared core  <- ~/.pi/agent/extensions/manager-core
 pi-unity-blender shared core  <- ~/.pi/agent/extensions/manager-core
 
 OK: every consumer loads the shared core (~/.pi/agent/extensions/manager-core)

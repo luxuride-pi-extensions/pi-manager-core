@@ -39,8 +39,8 @@ const FIX = process.argv.includes("--fix");
 
 /** The consumers, and the two files each carries a copy of. */
 const CONSUMERS = [
-	{ repo: "pi-vibe-blender", shim: "manager-core.ts", checks: "scripts/agent-template-checks.mjs" },
-	{ repo: "pi-vibe-unity", shim: "manager-core.ts", checks: "scripts/agent-template-checks.mjs" },
+	{ repo: "pi-blender", shim: "manager-core.ts", checks: "scripts/agent-template-checks.mjs" },
+	{ repo: "pi-unity", shim: "manager-core.ts", checks: "scripts/agent-template-checks.mjs" },
 	{ repo: "pi-unity-blender", shim: "manager-core.ts", checks: "scripts/agent-template-checks.mjs" },
 ];
 

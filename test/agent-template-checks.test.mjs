@@ -172,8 +172,8 @@ test("multiple missing tools are all reported", () => {
 
 test("unresolvedToolProviders reports a prefix whose extension cannot be resolved", () => {
 	const source = template("tools: read, blender_scene_info");
-	const missing = unresolvedToolProviders(source, (ext) => ext !== "vibe-blender");
-	assert.deepEqual(missing, [{ prefix: "blender_", extension: "vibe-blender" }]);
+	const missing = unresolvedToolProviders(source, (ext) => ext !== "pi-blender");
+	assert.deepEqual(missing, [{ prefix: "blender_", extension: "pi-blender" }]);
 });
 
 test("unresolvedToolProviders is quiet when every extension resolves", () => {

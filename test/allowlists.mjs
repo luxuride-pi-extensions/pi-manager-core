@@ -26,7 +26,7 @@ const MANAGER_PROMPT = "You are the manager.";
 
 const EXTENSIONS = [
 	{
-		dir: "pi-vibe-blender",
+		dir: "pi-blender",
 		prompt: "blender/agents/blender-manager.md",
 		roster: ["blender-worker", "blender-critic"],
 		// Blender and the binder both keep an IMAGE_READ_EXTENSIONS list and
@@ -37,7 +37,7 @@ const EXTENSIONS = [
 		refusesImageReads: true,
 	},
 	{
-		dir: "pi-vibe-unity",
+		dir: "pi-unity",
 		prompt: "unity/agents/unity-manager.md",
 		roster: ["unity-worker", "unity-critic"],
 		refusesImageReads: false,

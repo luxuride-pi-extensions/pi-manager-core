@@ -28,7 +28,7 @@ import { fileURLToPath } from "node:url";
 
 const REPO_ROOT = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 const CORE_NAME = "pi-manager-core";
-const CONSUMERS = ["pi-vibe-blender", "pi-vibe-unity", "pi-unity-blender"];
+const CONSUMERS = ["pi-blender", "pi-unity", "pi-unity-blender"];
 
 const failures = [];
 const fail = (message) => failures.push(message);

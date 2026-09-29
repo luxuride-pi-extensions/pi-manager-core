@@ -67,7 +67,7 @@ for (const [label, mod] of [["core", core]]) {
 
 // A side prompt with real content, and a degraded side, so the header ordering
 // and the loud-failure path are both exercised without a pi install.
-const sideDir = join(tmp, "vibe-fake");
+const sideDir = join(tmp, "pi-fake");
 mkdirSync(join(sideDir, "agents"), { recursive: true });
 writeFileSync(join(sideDir, "agents", "fake-manager.md"), "---\nname: m\n---\n\n## SIDE BODY MARKER\n");
 writeFileSync(join(sideDir, "agents", "exchange.md"), "## EXCHANGE MARKER\n");
@@ -76,7 +76,7 @@ for (const [label, mod] of [["core", core]]) {
 	const prompt = mod.composeManagerPrompt({
 		connectorPath: goodPrompt,
 		connectorRole: "unity-blender manager",
-		sides: [{ label: "Fake side", extension: "vibe-fake", primary: join("agents", "fake-manager.md"), extra: join("agents", "exchange.md"), extensionDir: sideDir }],
+		sides: [{ label: "Fake side", extension: "pi-fake", primary: join("agents", "fake-manager.md"), extra: join("agents", "exchange.md"), extensionDir: sideDir }],
 	});
 
 	check(`${label}: connector first`, prompt.indexOf("Do the thing.") < prompt.indexOf("# ----"));
@@ -92,8 +92,8 @@ for (const [label, mod] of [["core", core]]) {
 		connectorPath: goodPrompt,
 		connectorRole: "c",
 		sides: [
-			{ label: "One", extension: "vibe-fake", primary: join("agents", "fake-manager.md"), extensionDir: sideDir },
-			{ label: "Two", extension: "vibe-fake", primary: join("agents", "fake-manager.md"), extensionDir: sideDir },
+			{ label: "One", extension: "pi-fake", primary: join("agents", "fake-manager.md"), extensionDir: sideDir },
+			{ label: "Two", extension: "pi-fake", primary: join("agents", "fake-manager.md"), extensionDir: sideDir },
 		],
 	});
 	check(`${label}: side order preserved`, two.indexOf("# ---- One") < two.indexOf("# ---- Two"));
@@ -104,7 +104,7 @@ for (const [label, mod] of [["core", core]]) {
 	const broken = mod.composeManagerPrompt({
 		connectorPath: goodPrompt,
 		connectorRole: "c",
-		sides: [{ label: "Gone", extension: "vibe-fake", primary: join("agents", "absent.md"), extensionDir: sideDir }],
+		sides: [{ label: "Gone", extension: "pi-fake", primary: join("agents", "absent.md"), extensionDir: sideDir }],
 	});
 	check(`${label}: a missing side is visible in the prompt`, mod.isDegradedPrompt(broken), "the composition hid a failed side");
 	check(`${label}: a missing side keeps the connector`, broken.includes("Do the thing."));
