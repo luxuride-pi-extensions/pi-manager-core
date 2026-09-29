@@ -70,8 +70,25 @@ export function createManagerMode({ allowedTools, agentRoster, onGateMessage } =
 		return gated && readActiveAgentName(systemPrompt) === null;
 	}
 
-	/** A fresh session must not inherit the previous one's engagement. */
-	function reset() {
+	/**
+	 * A fresh session must not inherit the previous one's engagement.
+	 *
+	 * `reason` is the session_start reason, and "reload" is EXEMPT. A reload
+	 * is not a new session: it re-runs the extension's setup against the same
+	 * conversation, and the manager prompt the user is still working under is
+	 * the cached system prefix that reload does not remove. Clearing the gate
+	 * there left a session still behaving as the manager with none of the
+	 * enforcement — the allowlist, the write/edit refusal, the image refusal all
+	 * silently off, while a blender_execute_python or unity_execute_csharp call
+	 * went straight through. A guard that a slash command can switch off is not
+	 * a guard, and nothing about the reload told the user it had.
+	 *
+	 * Every other reason is a genuinely different session (`new`, `fork`,
+	 * `resume`), where inheriting would be the bug: the user is no longer
+	 * working under the manager prompt that gate was entered for.
+	 */
+	function reset(reason) {
+		if (reason === "reload") return;
 		engaged = false;
 		gated = false;
 	}

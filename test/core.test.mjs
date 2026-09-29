@@ -145,6 +145,30 @@ for (const [label, mod] of [["core", core]]) {
 	next.markEngaged();
 	next.reset();
 	check(`${label}: reset clears the gate`, next.isManagerSession(manager) === false);
+
+	// A /reload is not a fresh session, and this is the case that shipped as a
+	// live bug in all three extensions: pi calls oldRunner.invalidate() and
+	// re-emits session_start with reason "reload", which cleared the gate while
+	// the manager prompt stayed in context as the cached system prefix. A
+	// session that still BEHAVED like the manager had lost the allowlist, the
+	// write/edit refusal and the image refusal in one slash command, silently.
+	for (const reason of ["reload"]) {
+		const reloaded = mod.createManagerMode({ allowedTools: [] });
+		reloaded.markEngaged();
+		reloaded.reset(reason);
+		check(`${label}: ${reason} keeps the gate up`, reloaded.isManagerSession(manager) === true);
+		check(
+			`${label}: ${reason} still refuses write`,
+			reloaded.checkToolCall(event("write"), manager)?.block === true,
+		);
+	}
+	// Every OTHER reason is a genuinely different session and must still clear.
+	for (const reason of ["startup", "new", "resume", "fork", undefined]) {
+		const fresh = mod.createManagerMode({ allowedTools: [] });
+		fresh.markEngaged();
+		fresh.reset(reason);
+		check(`${label}: reset(${reason ?? "no argument"}) clears the gate`, fresh.isManagerSession(manager) === false);
+	}
 }
 
 /** Assert a refusal came back with a reason, since a reasonless block stalls. */

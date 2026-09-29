@@ -42,8 +42,11 @@ export interface ManagerMode {
 	isEngaged(): boolean;
 	/** Engaged, and not a subagent running inside that session. */
 	isManagerSession(systemPrompt: string | null | undefined): boolean;
-	/** A fresh session inherits nothing. */
-	reset(): void;
+	/**
+	 * A fresh session inherits nothing. A session_start whose reason is
+	 * "reload" is not a fresh session and keeps its engagement.
+	 */
+	reset(reason?: string): void;
 	/** null to allow, or the refusal that blocks the call. */
 	checkToolCall(event: ToolCallEvent, systemPrompt: string | null | undefined): ToolCallRefusal | null;
 	install(pi: unknown): void;
