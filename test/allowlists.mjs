@@ -49,7 +49,6 @@ const EXTENSIONS = [
 		refusesImageReads: true,
 	},
 ];
-
 /** The `tools:` line from a manager prompt's frontmatter. */
 function promptTools(source) {
 	const frontmatter = source.split("---")[1] ?? "";
@@ -152,6 +151,12 @@ for (const ext of EXTENSIONS) {
 			gate("subagent", { agent })?.block !== true,
 			`refused: ${gate("subagent", { agent })?.reason?.slice(0, 80) ?? ""}`,
 		);
+	}
+
+	// The two halves of waiting, asserted by name because neither is
+	// registered by any index.ts, so no other check here can see them dropped.
+	for (const tool of ["bg_wait", "subagent_supervisor"]) {
+		check(`${ext.dir}: ${tool} is allowed`, gate(tool, {})?.block !== true);
 	}
 }
 

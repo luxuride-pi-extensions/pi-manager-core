@@ -58,6 +58,9 @@ const TOOL_NAME = /^(?:blender|unity|unity_blender|vrchat)[a-z_]*_[a-z_]+$/;
  */
 const AMBIENT_TOOLS = new Set([
 	"subagent",
+	"subagents_enable",
+	"bg_wait",
+	"subagent_supervisor",
 	"contact_supervisor",
 	"read",
 	"write",
