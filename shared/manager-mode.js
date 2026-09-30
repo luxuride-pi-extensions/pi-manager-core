@@ -49,6 +49,32 @@ export function createManagerMode({ allowedTools, agentRoster, onGateMessage } =
 	}
 
 	/**
+	 * Record that an application tool ran, without gating the session.
+	 *
+	 * Engagement drives two independent things: the per-turn guidance
+	 * injection, and the tool_call gate. They are not the same decision, and
+	 * conflating them is what made a `unity_bridge_status` probe cost the
+	 * session its `write` and `edit`.
+	 *
+	 * The guidance is unconditional: a turn that calls a blender_* tool is
+	 * working on Blender whatever the session was doing before, and the live
+	 * state block is what stops it from acting on a stale selection. The gate is
+	 * not: it refuses a manager's writes because a manager's context is the most
+	 * expensive in the system and authoring is a worker's job. A session that
+	 * never ran `/unity` was handed no task, so it was never a manager and
+	 * removing its ability to write is a punishment for making one tool call.
+	 *
+	 * The split matters most on the read-only tools, which is where it was
+	 * actually hit: probing whether the bridge is alive is a question, not a
+	 * delegation, and it cost `write`, `edit` and every image read for the rest
+	 * of the session — with no way back but a slash command that tells the
+	 * model to stop managing.
+	 */
+	function markUsed() {
+		engaged = true;
+	}
+
+	/**
 	 * Leave the gate, keeping the session and the tools.
 	 *
 	 * Separate from `engaged` on purpose: the gate otherwise lasts until
@@ -147,7 +173,7 @@ export function createManagerMode({ allowedTools, agentRoster, onGateMessage } =
 		pi.on("tool_call", (event, ctx) => checkToolCall(event, ctx.getSystemPrompt()));
 	}
 
-	return { markEngaged, clearGate, isEngaged, isManagerSession, reset, checkToolCall, install };
+	return { markEngaged, markUsed, clearGate, isEngaged, isManagerSession, reset, checkToolCall, install };
 }
 
 /**

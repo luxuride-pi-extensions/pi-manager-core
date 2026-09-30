@@ -37,6 +37,13 @@ export interface ManagerModeOptions {
 export interface ManagerMode {
 	/** Enter manager mode: the engage command's job, and nothing else's. */
 	markEngaged(): void;
+	/**
+	 * Record an application tool call. Turns on the guidance injection WITHOUT
+	 * raising the write/edit/image gate — the two are separate decisions, and a
+	 * session that only probed the bridge is doing worker-level work, not
+	 * managing.
+	 */
+	markUsed(): void;
 	/** Lift the gate, keeping the session and the tools. True if it was set. */
 	clearGate(): boolean;
 	isEngaged(): boolean;

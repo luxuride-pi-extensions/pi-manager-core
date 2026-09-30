@@ -169,6 +169,20 @@ for (const [label, mod] of [["core", core]]) {
 		fresh.reset(reason);
 		check(`${label}: reset(${reason ?? "no argument"}) clears the gate`, fresh.isManagerSession(manager) === false);
 	}
+
+	// markUsed is the split that fixes the live bug: a session that called one
+	// application tool has every reason to receive the guidance and none to lose
+	// its writes. `isEngaged` is true either way -- that drives the injection --
+	// so only the gate tells the two apart, and it must.
+	const used = mod.createManagerMode({ allowedTools: ["read"] });
+	used.markUsed();
+	check(`${label}: markUsed counts as engaged`, used.isEngaged() === true);
+	check(`${label}: markUsed leaves write alone`, used.checkToolCall(event("write"), manager) === null);
+	// And /unity on top of it still gates, because the flag is a union not a
+	// latch that a later weaker call could unset.
+	used.markEngaged();
+	check(`${label}: markEngaged after markUsed still gates`, used.isManagerSession(manager) === true);
+	check(`${label}: markEngaged after markUsed refuses write`, mod_default_block(used, event("write"), manager, label));
 }
 
 /** Assert a refusal came back with a reason, since a reasonless block stalls. */
