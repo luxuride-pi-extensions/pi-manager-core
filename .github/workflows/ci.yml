@@ -34,6 +34,19 @@ jobs:
 
   consumers:
     name: consumer suites (${{ matrix.repo }})
+    # All three consumers are PRIVATE, so this job needs a PAT with read
+    # access to the org: GITHUB_TOKEN cannot read a private repository even in
+    # the same org.
+    #
+    # Gated on a repository VARIABLE rather than `secrets`: `secrets` is not in
+    # scope for a job-level `if` (only github/needs/vars/inputs are), and
+    # `if: ${{ secrets.CONSUMER_TOKEN != '' }}` fails the WHOLE workflow file --
+    # zero jobs, which is what the first run of this workflow reported. A
+    # variable also expresses the real condition -- "this repo can read its
+    # siblings" -- which is a property of the configuration, not of whether a
+    # particular PAT happens to be populated today.
+    if: ${{ vars.CONSUMER_REPOS_ENABLED == '1' }}
+    needs: core
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
