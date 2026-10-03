@@ -43,7 +43,11 @@ npm ci --legacy-peer-deps
 echo "==> $name: typecheck"
 npm run --silent typecheck
 
+# This job checked the consumers out on purpose, so their absence is an error
+# rather than a reason to skip: extension-registration.mjs skips an absent
+# checkout by default, and without this the job would pass having verified
+# nothing. See REQUIRED in that file.
 echo "==> $name: test"
-npm test
+PI_REQUIRE_CONSUMERS=1 npm test
 
 echo "==> $name: OK"
