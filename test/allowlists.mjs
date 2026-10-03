@@ -18,7 +18,7 @@
 
 import { join } from "node:path";
 import { readFileSync } from "node:fs";
-import { createJiti } from "/home/lux/.pi/agent/install/releases/0.87.1/node_modules/jiti/lib/jiti.mjs";
+import { createJiti } from "./jiti.mjs";
 
 const jiti = createJiti(import.meta.url, { isolated: true, interopDefault: true });
 const REPO_ROOT = join(import.meta.dirname, "..");

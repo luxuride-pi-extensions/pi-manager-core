@@ -15,7 +15,7 @@
 import { readdirSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { createJiti } from "/home/lux/.pi/agent/install/releases/0.87.1/node_modules/jiti/lib/jiti.mjs";
+import { createJiti } from "./jiti.mjs";
 
 const jiti = createJiti(import.meta.url, { isolated: true, interopDefault: true });
 
