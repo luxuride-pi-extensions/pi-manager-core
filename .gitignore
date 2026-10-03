@@ -1,2 +1,5 @@
-node_modules/
+# No trailing slash: this repo's node_modules is a SYMLINK to a sibling
+# extension's, and the slashed form does not match a symlink, so the link
+# itself gets committed.
+node_modules
 *.tsbuildinfo
