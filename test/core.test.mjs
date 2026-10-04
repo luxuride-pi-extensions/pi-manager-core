@@ -342,8 +342,44 @@ for (const [label, mod] of [["core", core]]) {
 	// Management/control actions carry no `agent`, so refusing them would make
 	// the manager unable to ask what its own children are doing.
 	check(`${label}: a management action is not a spawn`, mode.checkToolCall(spawn({ action: "status" }), "x") === null);
+	// `agent: null` alone is NOT a control action: a schema declaring
+	// `agent: string | null` sends it for those too, and treating bare null as
+	// "no agent named" would leave the roster bypassable by sending null.
+	check(`${label}: a bare null agent names nothing and cannot be authorised`, mode.checkToolCall(spawn({ agent: null }), "x")?.block === true);
+	check(`${label}: an action with a null agent is a control action`, mode.checkToolCall(spawn({ action: "list", agent: null }), "x") === null);
 	check(`${label}: whitespace is not an agent name`, mode.checkToolCall(spawn({ agent: "  " }), "x") === null);
 	check(`${label}: the roster does not loosen the allowlist`, mode.checkToolCall({ toolName: "bash", input: {} }, "x")?.block === true);
+
+	// Everything below is finding F: an `agent` field the core cannot read as a
+	// roster name used to take the `target.length === 0` allow-branch, because
+	// the target was coerced to "" before it was compared. Each of these is a
+	// spawn the roster cannot authorise, so each must be REFUSED. Before, all
+	// four were allowed, behind a gate whose stated rule is that only the roster
+	// may be spawned.
+	const unusable = [
+		["agent: undefined", { agent: undefined }],
+		["agent: 42", { agent: 42 }],
+		["agent: false", { agent: false }],
+		["agent: null alone names nothing", { agent: null }],
+		["agents: [...] (the plural field, which a mis-shaped spawn sends)", { agents: ["unity-worker"] }],
+		['agent: {name:"x"}', { agent: { name: "unity-worker" } }],
+		["agent: []", { agent: [] }],
+		["an input naming neither agent nor action", { prompt: "do the thing" }],
+	];
+	for (const [what, input] of unusable) {
+		const refusal = mode.checkToolCall(spawn(input), "x");
+		check(`${label}: ${what} is refused`, refusal?.block === true, JSON.stringify(refusal));
+		check(
+			`${label}: the refusal for ${what} names the way out`,
+			refusal?.reason?.includes("the manager may only spawn unity-worker, unity-critic") === true &&
+				/as a plain string in `agent`/.test(refusal?.reason ?? ""),
+			refusal?.reason,
+		);
+	}
+	// And the three that must still be allowed, so the fix above is a tightening
+	// of the same rule rather than a new one.
+	check(`${label}: a roster member with surrounding space still spawns`, mode.checkToolCall(spawn({ agent: "  unity-worker  " }), "x") === null);
+	check(`${label}: a control action carrying an explicit null agent is allowed`, mode.checkToolCall(spawn({ action: "status", agent: null }), "x") === null);
 
 	const open = mod.createManagerMode({ allowedTools: ["subagent"] });
 	open.markEngaged();
