@@ -21,6 +21,21 @@ jobs:
     name: unit tests and typecheck
     runs-on: ubuntu-latest
     steps:
+      # THIS REPOSITORY FIRST, ON PURPOSE, AND NOT BY ACCIDENT.
+      #
+      # actions/checkout runs `clean: true`, which deletes the CONTENTS OF
+      # $GITHUB_WORKSPACE before it clones. $GITHUB_WORKSPACE is the default
+      # path (an empty `path:`), so with the sibling checkouts already at
+      # projects/*, this step wipes every one of them -- and the run then dies
+      # a step later with
+      #
+      #   error: An error occurred trying to start process '/usr/bin/bash'
+      #   with working directory '.../projects/pi-manager-core'.
+      #   No such file or directory
+      #
+      # which reads like a checkout that never happened and is actually one
+      # that was deleted. Every sibling checkout must therefore come AFTER this
+      # step.
       - uses: actions/checkout@v5
 
       - uses: actions/setup-node@v5
@@ -51,8 +66,24 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # Fastest first, so a broken core reports its cheapest consumer before
+        # it waits on two installs. No other ordering matters: with every
+        # consumer checked out below, each job is independent.
         repo: [pi-blender, pi-unity-blender, pi-unity]
     steps:
+      # NEITHER checkout can be a bare `uses: actions/checkout@v5` here, and
+      # the reason is the same one that kills a bare checkout in the `core` job
+      # above. Both of this job's checkouts specify `path: projects/...`, so
+      # NEITHER of them is $GITHUB_WORKSPACE -- but a bare checkout as a THIRD
+      # step would still be, and its `clean: true` would delete the contents of
+      # $GITHUB_WORKSPACE, taking both siblings with it. There is no default
+      # checkout in this job, and that is deliberate: two checkouts with
+      # explicit paths, and nothing that empties the workspace.
+      #
+      # The layout itself is load-bearing. resolver-copies.mjs and
+      # allowlists.mjs resolve a consumer as REPO_ROOT/../<name>, so the core
+      # has to be a SIBLING of the consumer rather than its parent: both live
+      # under projects/. See test/consumers.sh, which is what consumes this.
       - uses: actions/checkout@v5
         with:
           repository: luxuride-pi-extensions/pi-manager-core
@@ -64,18 +95,53 @@ jobs:
           # from the fork is what GITHUB_TOKEN would be.
           token: ${{ secrets.CONSUMER_TOKEN }}
 
+      # ALL THREE consumers, in every matrix job, not just the one under test.
+      #
+      # The obvious reading of the matrix is "check out ${{ matrix.repo }} and
+      # run it", and that is what this did -- and two of the three jobs failed
+      # for a reason that has nothing to do with the consumer being tested:
+      #
+      #   consumer suites (pi-unity)
+      #     Error: Cannot find module '.../extensions/unity-blender/index.ts'
+      #   consumer suites (pi-unity-blender)
+      #     FAIL no load-failure notice -- a side prompt failed to load
+      #     11 passed, 4 failed
+      #
+      # Both suites need the OTHER consumers beside them. pi-unity's
+      # engagement-test.mjs imports the binder's index.ts by ABSOLUTE path
+      # (test/paths.mjs:153), and pi-unity-blender's manager-prompt.mjs:105
+      # reads pi-blender's manager prompt out of $PI_AGENT_DIR/extensions/.
+      # test/consumers.sh already links whatever is present and skips the rest,
+      # so with one consumer checked out it silently produced a run with no
+      # real signal rather than an error.
+      #
+      # This is the same completeness argument as REQUIRED in
+      # extension-registration.mjs: a job that verifies one consumer in
+      # isolation is verifying less than it looks like it is. The extra
+      # checkouts cost nothing -- no install happens for them, only symlinks
+      # and one read of a prompt file.
+      #
+      # All three at `ref: master`, for the asymmetry reason on the checkout
+      # below: the job answers "does the changed core still match the consumers
+      # as they are today", not "does it match one of them".
       - uses: actions/checkout@v5
         with:
-          repository: luxuride-pi-extensions/${{ matrix.repo }}
-          path: projects/${{ matrix.repo }}
-          # The consumer is pinned to its OWN default branch, while the core
-          # above is checked out at this branch. That asymmetry is the point:
-          # the job answers "does the changed core still match the consumers as
-          # they are today", which is the question a consumer's own CI cannot
-          # ask -- it has no copy of the core's new state.
-          #
-          # It cannot be github.sha: on a pull_request that is the merge commit
-          # of THIS repo, which does not exist in the consumer's history.
+          repository: luxuride-pi-extensions/pi-blender
+          path: projects/pi-blender
+          ref: master
+          token: ${{ secrets.CONSUMER_TOKEN }}
+
+      - uses: actions/checkout@v5
+        with:
+          repository: luxuride-pi-extensions/pi-unity
+          path: projects/pi-unity
+          ref: master
+          token: ${{ secrets.CONSUMER_TOKEN }}
+
+      - uses: actions/checkout@v5
+        with:
+          repository: luxuride-pi-extensions/pi-unity-blender
+          path: projects/pi-unity-blender
           ref: master
           token: ${{ secrets.CONSUMER_TOKEN }}
 
