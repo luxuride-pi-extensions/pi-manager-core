@@ -47,6 +47,105 @@ jobs:
       - run: npm run typecheck
       - run: npm test
 
+  packaging:
+    name: packaging allowlists
+    runs-on: ubuntu-latest
+    # All three consumers are PRIVATE, so this needs the same PAT the consumer
+    # job uses: GITHUB_TOKEN cannot read a private repository even in the same
+    # org.
+    #
+    # A SEPARATE job, and not a step in `core`, because of where the checkouts
+    # are. The consumers are checked out in the `consumers` job only, so a
+    # `files` check added to `core` finds no siblings and -- being written to
+    # skip rather than fail when a checkout is absent -- reports
+    #
+    #   ok pi-manager-core declares a files allowlist (3 entries)
+    #   skipped pi-blender (not checked out)
+    #   skipped pi-unity (not checked out)
+    #   skipped pi-unity-blender (not checked out)
+    #   1 of 4 package(s) clean, 0 problem(s)
+    #
+    # which is green and has checked one of the four. That is the failure mode
+    # this check exists to prevent, reproduced by the check itself.
+    #
+    # Its own job also means a packaging problem is reported once, as itself,
+    # rather than three times inside three consumer suites.
+    steps:
+      # THIS REPOSITORY AT projects/pi-manager-core, NOT AT THE WORKSPACE ROOT.
+      #
+      # test/package-contents.mjs resolves a package as REPO_ROOT/../<name> --
+      # the same REPO_ROOT/.. convention resolver-copies.mjs and
+      # extension-registration.mjs use, and the layout `consumers` already
+      # provides by checking the core out under `projects/`. Checking it out
+      # bare here made `..` the workspace root while the siblings sat one level
+      # lower, in `projects/`, so the check reported
+      #
+      #   skipped pi-blender (not checked out)
+      #   skipped pi-unity (not checked out)
+      #   skipped pi-unity-blender (not checked out)
+      #   1 of 4 package(s) clean, 0 problem(s)
+      #
+      # while the logs above it showed three successful clones into
+      # projects/pi-blender, projects/pi-unity and projects/pi-unity-blender.
+      # Green, and looking at one of the four.
+      #
+      # Being the first checkout also matters: a bare `actions/checkout` runs
+      # `clean: true`, which deletes the contents of $GITHUB_WORKSPACE, so it
+      # has to precede every path-ed sibling checkout -- and specifying a `path`
+      # is what keeps it from doing that.
+      - uses: actions/checkout@v5
+        with:
+          path: projects/pi-manager-core
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - uses: actions/checkout@v5
+        with:
+          repository: luxuride-pi-extensions/pi-blender
+          path: projects/pi-blender
+          ref: master
+          token: ${{ secrets.CONSUMER_TOKEN }}
+
+      - uses: actions/checkout@v5
+        with:
+          repository: luxuride-pi-extensions/pi-unity
+          path: projects/pi-unity
+          ref: master
+          token: ${{ secrets.CONSUMER_TOKEN }}
+
+      - uses: actions/checkout@v5
+        with:
+          repository: luxuride-pi-extensions/pi-unity-blender
+          path: projects/pi-unity-blender
+          ref: master
+          token: ${{ secrets.CONSUMER_TOKEN }}
+
+      # No `npm ci` here. The check reads package.json and shells out to
+      # `npm pack --dry-run`, which packs from the working tree and needs no
+      # dependencies -- and deliberately no installs, because an install would
+      # hide the thing being checked: a package whose allowlist omits a
+      # directory is exactly a package whose freshly-installed state looks fine.
+      #
+      # ref: master on the consumers, for the asymmetry reason in `consumers`:
+      # the answer being tested is "do the allowlists describe the packages as
+      # they are today", which is the question a single repo cannot ask about
+      # itself.
+      # run from projects/pi-manager-core, so REPO_ROOT/.. is projects/ where
+      # the three consumers above were checked out.
+      #
+      # PI_REQUIRE_PACKAGES=1 because a skip here would be indistinguishable
+      # from coverage: this check reported "1 of 4 package(s) clean, 0
+      # problem(s)" twice while verifying one package, once from the wrong
+      # working directory and once from the wrong checkout layout. With all four
+      # expected, an absent one is now a failure.
+      - name: what each package would publish
+        run: node test/package-contents.mjs
+        working-directory: projects/pi-manager-core
+        env:
+          PI_REQUIRE_PACKAGES: "1"
+
   consumers:
     name: consumer suites (${{ matrix.repo }})
     # All three consumers are PRIVATE, so this job needs a PAT with read
