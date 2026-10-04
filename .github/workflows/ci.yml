@@ -21,9 +21,9 @@ jobs:
     name: unit tests and typecheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -53,7 +53,7 @@ jobs:
       matrix:
         repo: [pi-blender, pi-unity-blender, pi-unity]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           repository: luxuride-pi-extensions/pi-manager-core
           path: projects/pi-manager-core
@@ -64,7 +64,7 @@ jobs:
           # from the fork is what GITHUB_TOKEN would be.
           token: ${{ secrets.CONSUMER_TOKEN }}
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           repository: luxuride-pi-extensions/${{ matrix.repo }}
           path: projects/${{ matrix.repo }}
@@ -79,7 +79,7 @@ jobs:
           ref: master
           token: ${{ secrets.CONSUMER_TOKEN }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
