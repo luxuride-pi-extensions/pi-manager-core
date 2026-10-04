@@ -76,12 +76,20 @@ for (const { repo, shim, checks } of CONSUMERS) {
 		const path = join(dir, name);
 		checked += 1;
 		if (!existsSync(path)) {
+			// Counted only when NOT fixed, for the reason spelled out at the
+			// DRIFT branch below: a --fix run that repaired the file exits 0, and
+			// a --fix run that could not repair it has already exited non-zero
+			// from the write failing. Incrementing here as well meant a
+			// successfully repaired MISSING file still exited 1 while the DRIFT
+			// case beside it exited 0 — the two branches disagreeing about the
+			// same rationale, in a file whose comment says the rationale.
 			console.error(`MISSING ${repo}/${name} — ${FIX ? "will be written" : "run with --fix"}`);
-			problems += 1;
 			if (FIX) {
 				mkdirSync(dirname(path), { recursive: true });
 				writeFileSync(path, expected);
 				console.log(`  wrote ${path}`);
+			} else {
+				problems += 1;
 			}
 			continue;
 		}
