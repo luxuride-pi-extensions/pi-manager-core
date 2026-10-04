@@ -487,6 +487,41 @@ for (const [label, mod] of [["core", core]]) {
 	check(`${label}: the notice tells the manager what to do`, failed.message.content.includes("Call the session-context tool"));
 	check(`${label}: the failure path never formats state`, failed.message.content !== "never reached");
 
+	// A fetchState with NO timeout of its own must still be bounded by the
+	// core, or `timeoutMs` is only a promise about the failure TEXT. This is the
+	// finding: it used to be interpolated into the notice and passed to
+	// formatState, and nothing enforced it, so a bare fetch hung the turn and
+	// the UNAVAILABLE notice never fired. Latent only because both consumers wrap
+	// their own.
+	const hanging = mod.createContextInjection({
+		section: "blender",
+		customType: "blender_context",
+		timeoutMs: 40,
+		getPrompt: () => "P",
+		fetchState: () => new Promise(() => {}),
+		formatState: () => "never reached",
+	});
+	const hung = await hanging(event("manager", {}), {});
+	check(`${label}: a fetch that never answers is bounded by the core's timeout`, (hung?.message?.content ?? "").includes("UNAVAILABLE"), "the turn hung instead");
+	check(`${label}: the core's timeout is named in the notice`, hung.message.content.includes("40 ms"));
+	check(`${label}: the core's timeout explains itself`, /did not answer within 40 ms/.test(hung.message.content), hung.message.content);
+	check(`${label}: a timed-out fetch still injects the do-not-assume rule`, hung.message.content.includes("Do NOT assume"));
+
+	// The guard must not outlive the fetch it was guarding: a pending timer per
+	// turn would hold a session open after every fast success.
+	const slowButFinite = mod.createContextInjection({
+		section: "blender",
+		customType: "blender_context",
+		timeoutMs: 5000,
+		getPrompt: () => "P",
+		fetchState: async () => {
+			await new Promise((r) => setTimeout(r, 5));
+			return { line: "late" };
+		},
+		formatState: (state) => `live: ${state.line}`,
+	});
+	check(`${label}: a fetch that answers inside the timeout is not raced`, (await slowButFinite(event("manager", {}), {}))?.message?.content === "live: late");
+
 	// An empty render is "nothing worth injecting", which is different from a
 	// failure: no message at all, and not a misleading notice.
 	const empty = mod.createContextInjection({

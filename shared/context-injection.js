@@ -33,7 +33,10 @@ import { readActiveAgentName } from "./session.js";
  *
  * An application supplies only what is genuinely its own: the section name, the
  * message's custom type, the fetch, and the timeout. The ordering, the child
- * rule, and the failure text are the same everywhere and are not options.
+ * rule, the timeout itself and the failure text are the same everywhere and are
+ * not options. `timeoutMs` is enforced HERE rather than left to the caller, so a
+ * consumer that passes a bare `fetchState` still gets the documented notice at
+ * the documented time.
  */
 export function createContextInjection({
 	section,
@@ -109,7 +112,22 @@ export function createContextInjection({
 
 		let content;
 		try {
-			content = formatState(await fetchState(ctx), { timeoutMs, extraGuidance });
+			// The core races its OWN timer around the fetch, because
+			// `timeoutMs` is documented as bounding "the fetch, and the timeout"
+			// and previously did not: it was interpolated into the failure TEXT
+			// and handed to formatState, and nothing ever enforced it. A consumer
+			// whose fetchState had no timeout of its own therefore hung the whole
+			// turn — no snapshot, no UNAVAILABLE notice, and a manager waiting on
+			// a bridge that will never answer. That is latent today (pi-unity
+			// wraps in withTimeout, pi-blender passes its own) precisely because
+			// every current consumer happens to be careful, and a shared chokepoint
+			// whose documented guarantee holds only because its callers are
+			// correct is not a guarantee.
+			//
+			// The race does not cancel the underlying work — nothing here can, and
+			// pretending otherwise would be a lie. It stops WAITING for it, which
+			// is the half that matters: the turn completes with the loud notice.
+			content = formatState(await withTimeout(fetchState(ctx), timeoutMs, section), { timeoutMs, extraGuidance });
 		} catch (error) {
 			// Rule 3: never swallow. The message names the timeout, refuses to
 			// let the manager trust earlier turns, and names the tool to retry.
@@ -134,4 +152,34 @@ export function createContextInjection({
 		if (!content || content.trim().length === 0) return undefined;
 		return { message: { customType, content, display: true } };
 	};
+}
+
+/**
+ * Reject with a named error once `promise` has not settled in `ms`.
+ *
+ * The timer is cleared once the race settles, so a fast success never leaves one
+ * pending — which is the reason NOT to `unref()` it. An unref'd timer does not
+ * keep the loop alive, and therefore does not FIRE when the fetch is the only
+ * thing in flight: the guard would silently stop guarding, and the hang this
+ * exists to prevent would come back, only on a turn quiet enough to expose it.
+ * Clearing on settle is sufficient for the lifetime problem, and it does not
+ * weaken the guard.
+ *
+ * The message reaches the model inside the UNAVAILABLE notice, which is why it
+ * is written to be read there.
+ *
+ * `ms` of 0 or less disables the race. That is not a documented feature, it is
+ * the escape hatch for a caller that genuinely wants no bound, and it is not
+ * the default — the default is 30s.
+ */
+function withTimeout(promise, ms, section) {
+	if (!Number.isFinite(ms) || ms <= 0) return promise;
+	let timer;
+	const guard = new Promise((_resolve, reject) => {
+		timer = setTimeout(
+			() => reject(new Error(`the ${section} state fetch did not answer within ${ms} ms`)),
+			ms,
+		);
+	});
+	return Promise.race([promise, guard]).finally(() => clearTimeout(timer));
 }
