@@ -21,6 +21,21 @@ jobs:
     name: unit tests and typecheck
     runs-on: ubuntu-latest
     steps:
+      # THIS REPOSITORY FIRST, ON PURPOSE, AND NOT BY ACCIDENT.
+      #
+      # actions/checkout runs `clean: true`, which deletes the CONTENTS OF
+      # $GITHUB_WORKSPACE before it clones. $GITHUB_WORKSPACE is the default
+      # path (an empty `path:`), so with the sibling checkouts already at
+      # projects/*, this step wipes every one of them -- and the run then dies
+      # a step later with
+      #
+      #   error: An error occurred trying to start process '/usr/bin/bash'
+      #   with working directory '.../projects/pi-manager-core'.
+      #   No such file or directory
+      #
+      # which reads like a checkout that never happened and is actually one
+      # that was deleted. Every sibling checkout must therefore come AFTER this
+      # step.
       - uses: actions/checkout@v5
 
       - uses: actions/setup-node@v5
@@ -53,6 +68,19 @@ jobs:
       matrix:
         repo: [pi-blender, pi-unity-blender, pi-unity]
     steps:
+      # NEITHER checkout can be a bare `uses: actions/checkout@v5` here, and
+      # the reason is the same one that kills a bare checkout in the `core` job
+      # above. Both of this job's checkouts specify `path: projects/...`, so
+      # NEITHER of them is $GITHUB_WORKSPACE -- but a bare checkout as a THIRD
+      # step would still be, and its `clean: true` would delete the contents of
+      # $GITHUB_WORKSPACE, taking both siblings with it. There is no default
+      # checkout in this job, and that is deliberate: two checkouts with
+      # explicit paths, and nothing that empties the workspace.
+      #
+      # The layout itself is load-bearing. resolver-copies.mjs and
+      # allowlists.mjs resolve a consumer as REPO_ROOT/../<name>, so the core
+      # has to be a SIBLING of the consumer rather than its parent: both live
+      # under projects/. See test/consumers.sh, which is what consumes this.
       - uses: actions/checkout@v5
         with:
           repository: luxuride-pi-extensions/pi-manager-core
