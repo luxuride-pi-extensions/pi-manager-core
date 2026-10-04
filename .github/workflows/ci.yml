@@ -47,6 +47,18 @@ jobs:
       - run: npm run typecheck
       - run: npm test
 
+      # The packaging allowlists are a CROSS-REPO fact: each consumer's
+      # `files` list is only correct relative to what pi loads from it, and a
+      # stale entry in any of the four is invisible from inside that repo. So
+      # this is checked here, where all four checkouts exist, rather than
+      # duplicated as a fourth copy of the same list inside each consumer.
+      #
+      # Runs after the checkouts below so all four repos are present, and it
+      # covers the core's own package.json too (PACKAGES includes
+      # pi-manager-core), so there is exactly one place that asserts this.
+      - name: packaging allowlists (cross-repo)
+        run: node test/package-contents.mjs
+
   consumers:
     name: consumer suites (${{ matrix.repo }})
     # All three consumers are PRIVATE, so this job needs a PAT with read

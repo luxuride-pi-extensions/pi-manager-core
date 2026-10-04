@@ -11,6 +11,11 @@
 	"private": true,
 	"type": "module",
 	"license": "MIT",
+	"files": [
+		"index.ts",
+		"manager-core.ts",
+		"shared/"
+	],
 	"pi": {
 		"extensions": [
 			"./index.ts"
@@ -18,10 +23,11 @@
 	},
 	"scripts": {
 		"typecheck": "tsc --noEmit",
-		"test": "node test/core.test.mjs && node test/agent-template-checks.test.mjs && node test/agent-rosters.mjs && node test/doc-consistency.mjs && node test/resolver-copies.mjs && node test/extension-registration.mjs && node test/allowlists.mjs && node test/dependency-declaration.mjs",
+		"test": "node test/core.test.mjs && node test/agent-template-checks.test.mjs && node test/agent-rosters.mjs && node test/doc-consistency.mjs && node test/resolver-copies.mjs && node test/extension-registration.mjs && node test/allowlists.mjs && node test/dependency-declaration.mjs && node test/package-contents.mjs",
 		"check:consumers": "node test/resolver-copies.mjs",
 		"which-core": "node test/which-core.mjs",
-		"fix:consumers": "node test/resolver-copies.mjs --fix"
+		"fix:consumers": "node test/resolver-copies.mjs --fix",
+		"check:package-contents": "node test/package-contents.mjs"
 	},
 	"devDependencies": {
 		"@earendil-works/pi-coding-agent": "^0.87.1",
