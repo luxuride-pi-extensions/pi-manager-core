@@ -38,6 +38,45 @@ export function stripFrontmatter(source) {
 }
 
 /**
+ * The outcome of ONE prompt read, filled in by {@link readPromptFile}.
+ *
+ * A plain object; the shape is this typedef because shared/*.js is
+ * hand-written JavaScript with a hand-written .d.ts beside it (shared/core.js
+ * header), not TypeScript. Typed here AND in shared/prompts.d.ts.
+ *
+ * Passed BY THE CALLER, and the return type of `readPromptFile` stays `string`.
+ * That is the constraint, and it is the consumer's: pi-blender's and pi-unity's
+ * `getManagerPrompt(): string` interpolate the result straight into a string
+ * return, so changing `readPromptFile` to return an object would inject one
+ * where a string is declared -- a live runtime break in a repository released
+ * independently of this one.
+ *
+ * So attribution is opt-in through an out-param. The caller that needs to know
+ * WHICH half degraded passes an object and gets it filled in; a caller that does
+ * not care pays nothing. KNOWN LIMIT, and the honest statement of what this
+ * choice costs: a caller who ignores the out-param still cannot attribute
+ * anything, and `isDegradedPrompt` on a composed string remains best-effort.
+ * That is the compatibility trade, not an oversight.
+ *
+ * @typedef {object} PromptReadReport
+ * @property {boolean} degraded False when the file read, true when it did not.
+ * @property {string} path The path that was read, or would have been. Set on
+ *   EVERY call, on both the success and the failure path.
+ * @property {string} [role] The role that was passed, so a report says which
+ *   prompt this entry is.
+ */
+
+/**
+ * How a composition's halves turned out.
+ *
+ * @typedef {object} ManagerPromptReport
+ * @property {boolean} degraded True when ANY half failed to read.
+ * @property {PromptReadReport[]} halves One entry per file that was read, in
+ *   composition order, so a caller can name WHICH connector or side degraded
+ *   rather than only that something did.
+ */
+
+/**
  * Read a prompt file, or return a sentence naming the failure.
  *
  * Loud degradation is the contract, because every silent alternative is worse.
@@ -52,13 +91,21 @@ export function stripFrontmatter(source) {
  * filename an attacker chose, and it is fenced as data. The notice as a whole is
  * bounded too — see DEGRADATION_BUDGET — because a diagnostic that does not fit
  * is still a diagnostic, and a 40 KB ENOENT is not.
+ *
+ * `report` is filled in on BOTH paths, deliberately. A report whose entries
+ * exist only on failure cannot tell "read it, it was fine" from "never looked",
+ * and that is the same silent-skip shape as a gate that reports green having
+ * checked nothing.
  */
-export function readPromptFile(path, role) {
+export function readPromptFile(path, role, report) {
+	const outcome = { degraded: false, path, role };
+	if (report && typeof report === "object") Object.assign(report, outcome);
 	try {
 		const body = stripFrontmatter(readFileSync(path, "utf8"));
 		if (!body) throw new Error("the file is empty after its frontmatter was stripped");
 		return body;
 	} catch (error) {
+		if (report && typeof report === "object") report.degraded = true;
 		const cause = error instanceof Error ? error.message : String(error);
 		return clampText(
 			`The ${role} prompt could not be read from ${clampText(String(path), PATH_BUDGET)}, so this ` +
@@ -83,17 +130,47 @@ export function readPromptFile(path, role) {
  */
 const DEGRADATION_BUDGET = 1_200;
 
+/**
+ * The phrase every degradation notice contains.
+ *
+ * Named, because `isDegradedPrompt` matches on it and a rename of the wording
+ * above would otherwise silently turn the string form into "never degraded". A
+ * marker that is part of the notice is also part of the contract.
+ */
+const DEGRADATION_MARKER = "prompt could not be read from";
+
 /** How much of the path is kept. A path is the application's own, not the bridge's. */
 const PATH_BUDGET = 300;
 
-/** True when `readPromptFile` degraded, so a caller can log it once. */
+/**
+ * True when a prompt read degraded.
+ *
+ * A THIN COMPATIBILITY WRAPPER over two shapes, and neither is exact for a
+ * COMPOSED string:
+ *
+ *   - a `PromptReadReport` (or the structured form callers may hold): the flag is
+ *     read, which is exact;
+ *   - a plain string, which is the composed-prompt case and can only be a
+ *     substring test. A healthy prompt that happens to contain the phrase is a
+ *     false positive, and from a concatenation there is no way to know WHICH
+ *     half degraded.
+ *
+ * A caller that needs the attribution must keep the report it passed to
+ * `readPromptFile` — or to `composeManagerPrompt`, which fills one per half —
+ * and read `degraded` from it. That is what the composition path below does.
+ */
 export function isDegradedPrompt(text) {
-	return typeof text === "string" && text.includes("could not be read from");
+	if (typeof text === "object" && text !== null) return text.degraded === true;
+	return typeof text === "string" && text.includes(DEGRADATION_MARKER);
 }
 
 /**
  * Compose one manager prompt out of a connector prompt and any number of side
  * prompts, each under a provenance header.
+ *
+ * `report` is filled on every read, so a caller gets WHICH half degraded rather
+ * than only that the composed string contains a phrase. It is optional, and a
+ * caller that passes nothing is unaffected.
  *
  * The header is load-bearing, not decoration. Every side prompt opens by
  * declaring the reader to be that side's MANAGER and then defines its own loop,
@@ -114,12 +191,32 @@ export function isDegradedPrompt(text) {
  * copy in the composing extension goes stale silently and looks authoritative
  * while doing it, which is the one failure a shared core exists to prevent.
  */
-export function composeManagerPrompt({ connectorPath, connectorRole, sides = [] }) {
-	const parts = [readPromptFile(connectorPath, connectorRole)];
+export function composeManagerPrompt({ connectorPath, connectorRole, sides = [] }, report) {
+	/** Record one read's outcome, when the caller asked for attribution. */
+	const note = (path, role) => {
+		if (!report || typeof report !== "object") return null;
+		if (!Array.isArray(report.halves)) {
+			report.halves = [];
+			report.degraded = false;
+		}
+		const entry = { degraded: false, path, role };
+		report.halves.push(entry);
+		return entry;
+	};
+
+	const connectorReport = note(connectorPath, connectorRole);
+	const parts = [readPromptFile(connectorPath, connectorRole, connectorReport ?? undefined)];
 	for (const side of sides) {
 		const dir = side.extensionDir ?? getInstalledExtensionDir(side.extension);
-		const sections = [readPromptFile(join(dir, side.primary), `${side.label} manager`)];
-		if (side.extra) sections.push(readPromptFile(join(dir, side.extra), `${side.label} exchange contract`));
+		const primaryPath = join(dir, side.primary);
+		const primaryReport = note(primaryPath, `${side.label} manager`);
+		const sections = [readPromptFile(primaryPath, `${side.label} manager`, primaryReport ?? undefined)];
+		if (side.extra) {
+			const extraPath = join(dir, side.extra);
+			sections.push(
+				readPromptFile(extraPath, `${side.label} exchange contract`, note(extraPath, `${side.label} exchange contract`) ?? undefined),
+			);
+		}
 		parts.push(
 			[
 				`# ---- ${side.label} manager prompt (from the ${side.extension} extension) ----`,
@@ -136,5 +233,6 @@ export function composeManagerPrompt({ connectorPath, connectorRole, sides = [] 
 			].join("\n"),
 		);
 	}
+	if (report && typeof report === "object") report.degraded = (report.halves ?? []).some((half) => half.degraded);
 	return parts.join("\n\n");
 }

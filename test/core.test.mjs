@@ -64,9 +64,9 @@ const ARITY = {
 	getPiAgentDir: 0,
 	getInstalledExtensionDir: 1,
 	stripFrontmatter: 1,
-	readPromptFile: 2,
+	readPromptFile: 3,
 	isDegradedPrompt: 1,
-	composeManagerPrompt: 1,
+	composeManagerPrompt: 2,
 	readActiveAgentName: 1,
 	createManagerMode: 0,
 	createContextInjection: 1,
@@ -798,6 +798,72 @@ function commandCtx(pi, idle) {
 	const plainPi = makeCommandPi();
 	core.registerEngageCommand(plainPi, { name: "plain" });
 	check("no completions hook means the key is absent, not an empty function", !("getArgumentCompletions" in plainPi.commands.get("plain")));
+}
+
+/* ------------------------------------------------------------ attribution -- */
+
+// N: a caller holding a composed prompt could only be told THAT something
+// degraded. The out-param gives it the halves, one entry per file read.
+{
+	const goodHalf = {};
+	const goodText = core.readPromptFile(goodPrompt, "test manager", goodHalf);
+	check("a successful read still returns the prompt body", typeof goodText === "string" && goodText.includes("Do the thing."));
+	check("a successful read is NOT degraded", goodHalf.degraded === false, JSON.stringify(goodHalf));
+	check("a successful read records its path", goodHalf.path === goodPrompt);
+	check("a successful read records its role", goodHalf.role === "test manager");
+
+	const badHalf = {};
+	core.readPromptFile(join(tmp, "nope.md"), "Blender manager", badHalf);
+	check("a failed read IS degraded", badHalf.degraded === true, JSON.stringify(badHalf));
+	check("a failed read still records its path", badHalf.path.endsWith("nope.md"));
+	check("isDegradedPrompt reads the flag from a report", core.isDegradedPrompt(goodHalf) === false && core.isDegradedPrompt(badHalf) === true);
+
+	// The composed case, which is what N is about: one side is missing, and the
+	// report says WHICH rather than only that the string contains a phrase.
+	const composedReport = {};
+	core.composeManagerPrompt(
+		{
+			connectorPath: goodPrompt,
+			connectorRole: "c",
+			sides: [
+				{ label: "Present", extension: "pi-fake", primary: join("agents", "fake-manager.md"), extensionDir: sideDir },
+				{ label: "Gone", extension: "pi-fake", primary: join("agents", "absent.md"), extensionDir: sideDir },
+			],
+		},
+		composedReport,
+	);
+	check("a composition reports that something degraded", composedReport.degraded === true);
+	check("a composition names EVERY half, present and absent alike", composedReport.halves.length === 3, JSON.stringify(composedReport.halves.map((h) => h.role)));
+	check("a composition says the connector read fine", composedReport.halves[0].degraded === false);
+	check("a composition says the PRESENT side read fine", composedReport.halves[1].degraded === false);
+	check("a composition says which side degraded", composedReport.halves[2].degraded === true && composedReport.halves[2].role === "Gone manager", JSON.stringify(composedReport.halves[2]));
+	check("a composition names the degraded half's PATH", composedReport.halves[2].path.endsWith("absent.md"));
+
+	// All-fine: the report is filled, and says so, rather than being empty. An
+	// empty report cannot distinguish "all good" from "never looked".
+	const cleanReport = {};
+	core.composeManagerPrompt(
+		{ connectorPath: goodPrompt, connectorRole: "c", sides: [{ label: "Present", extension: "pi-fake", primary: join("agents", "fake-manager.md"), extra: join("agents", "exchange.md"), extensionDir: sideDir }] },
+		cleanReport,
+	);
+	check("a clean composition is not degraded", cleanReport.degraded === false, JSON.stringify(cleanReport));
+	check("a clean composition still lists every half it read", cleanReport.halves.length === 3);
+	check("every half of a clean composition is clean", cleanReport.halves.every((h) => h.degraded === false));
+
+	// Omitting the report is what the three consumers do today, so it must work.
+	const noReport = core.composeManagerPrompt({ connectorPath: goodPrompt, connectorRole: "c", sides: [] });
+	check("composeManagerPrompt with no report still returns a string", typeof noReport === "string" && noReport.includes("Do the thing."));
+	check("readPromptFile with no report still returns a string", typeof core.readPromptFile(goodPrompt, "r") === "string");
+
+	// The string form stays a substring test, and a healthy prompt containing the
+	// marker phrase is still a false positive -- recorded as a KNOWN LIMIT in
+	// prompts.js rather than papered over. It is asserted so it cannot be
+	// "fixed" by deleting the marker rather than by fixing the caller.
+	const healthy = join(tmp, "explains-degradation.md");
+	writeFileSync(healthy, "# Healthy\n\nIf a prompt could not be read from disk, say so plainly.\n");
+	check("the degradation MARKER is the phrase the wrapper matches", core.isDegradedPrompt(core.readPromptFile(join(tmp, "nope.md"), "r")) === true);
+	check("a healthy prompt that quotes the marker is a false positive of the string form", core.isDegradedPrompt(core.readPromptFile(healthy, "r")) === true, "recorded as a known limit of the compatibility wrapper");
+	check("the report-based form has no such false positive", core.isDegradedPrompt({ degraded: false, path: healthy }) === false);
 }
 
 /* --------------------------------------------------- untrusted-text bounds -- */
