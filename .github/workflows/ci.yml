@@ -71,15 +71,36 @@ jobs:
     # Its own job also means a packaging problem is reported once, as itself,
     # rather than three times inside three consumer suites.
     steps:
+      # THIS REPOSITORY AT projects/pi-manager-core, NOT AT THE WORKSPACE ROOT.
+      #
+      # test/package-contents.mjs resolves a package as REPO_ROOT/../<name> --
+      # the same REPO_ROOT/.. convention resolver-copies.mjs and
+      # extension-registration.mjs use, and the layout `consumers` already
+      # provides by checking the core out under `projects/`. Checking it out
+      # bare here made `..` the workspace root while the siblings sat one level
+      # lower, in `projects/`, so the check reported
+      #
+      #   skipped pi-blender (not checked out)
+      #   skipped pi-unity (not checked out)
+      #   skipped pi-unity-blender (not checked out)
+      #   1 of 4 package(s) clean, 0 problem(s)
+      #
+      # while the logs above it showed three successful clones into
+      # projects/pi-blender, projects/pi-unity and projects/pi-unity-blender.
+      # Green, and looking at one of the four.
+      #
+      # Being the first checkout also matters: a bare `actions/checkout` runs
+      # `clean: true`, which deletes the contents of $GITHUB_WORKSPACE, so it
+      # has to precede every path-ed sibling checkout -- and specifying a `path`
+      # is what keeps it from doing that.
       - uses: actions/checkout@v5
+        with:
+          path: projects/pi-manager-core
 
       - uses: actions/setup-node@v5
         with:
           node-version: 22
 
-      # THIS REPOSITORY FIRST, for the reason spelled out in `core`: a bare
-      # checkout deletes the contents of $GITHUB_WORKSPACE, so it has to
-      # precede every path-ed sibling checkout.
       - uses: actions/checkout@v5
         with:
           repository: luxuride-pi-extensions/pi-blender
@@ -111,8 +132,19 @@ jobs:
       # the answer being tested is "do the allowlists describe the packages as
       # they are today", which is the question a single repo cannot ask about
       # itself.
+      # run from projects/pi-manager-core, so REPO_ROOT/.. is projects/ where
+      # the three consumers above were checked out.
+      #
+      # PI_REQUIRE_PACKAGES=1 because a skip here would be indistinguishable
+      # from coverage: this check reported "1 of 4 package(s) clean, 0
+      # problem(s)" twice while verifying one package, once from the wrong
+      # working directory and once from the wrong checkout layout. With all four
+      # expected, an absent one is now a failure.
       - name: what each package would publish
         run: node test/package-contents.mjs
+        working-directory: projects/pi-manager-core
+        env:
+          PI_REQUIRE_PACKAGES: "1"
 
   consumers:
     name: consumer suites (${{ matrix.repo }})

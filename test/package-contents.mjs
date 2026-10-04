@@ -33,7 +33,10 @@
  * assumed to be an array.
  *
  * Skips, and says so, when npm or a checkout is unavailable -- the core has to
- * be testable on its own.
+ * be testable on its own. Set PI_REQUIRE_PACKAGES=1 where all four are supposed
+ * to be present (the CI job does) and an absent one becomes a failure rather
+ * than a line of output; see the note at the bottom for why that distinction
+ * exists twice over.
  *
  *   node test/package-contents.mjs
  */
@@ -74,7 +77,7 @@ const SKILL_DIRS = {
 	"pi-unity-blender": ["skills"],
 };
 
-let checked = 0;
+const checked = [];
 let problems = 0;
 const skipped = [];
 
@@ -125,7 +128,7 @@ for (const { repo, entry } of PACKAGES) {
 		fail(`${repo}: package.json is not readable as JSON (${pkg.__error})`);
 		continue;
 	}
-	checked += 1;
+	checked.push(repo);
 
 	if (!Array.isArray(pkg.files) || pkg.files.length === 0) {
 		fail(
@@ -189,5 +192,26 @@ for (const { repo, entry } of PACKAGES) {
 }
 
 for (const s of skipped) console.log(`skipped ${s}`);
-console.log(`\n${checked - problems} of ${checked} package(s) clean, ${problems} problem(s)`);
+console.log(`\n${checked.length - problems} of ${checked.length} package(s) clean, ${problems} problem(s)`);
+
+// A skip is reported as a skip and never as coverage, because this check has
+// now twice produced a green run that verified one of four packages: once when
+// it was a step in a job with no sibling checkouts, and again when the core sat
+// at the workspace root while the siblings sat under projects/, so REPO_ROOT/..
+// pointed above them. Both runs printed "0 problem(s)".
+//
+// Skipping is still the right behaviour -- the core has to be testable on its
+// own, where three of the four are legitimately absent -- but a caller that
+// expected all four and got one is running the wrong thing, and the difference
+// between those two cases is a line of output nothing was reading. So:
+// standalone it skips quietly; PI_REQUIRE_PACKAGES=1 (which the CI job sets)
+// turns any absence into a failure.
+if (skipped.length > 0 && process.env.PI_REQUIRE_PACKAGES === "1") {
+	console.error(
+		`\nPI_REQUIRE_PACKAGES=1 and ${skipped.length} package(s) are absent, so this run ` +
+			`checked ${checked.length} of ${PACKAGES.length}. Fix the checkout layout, not the skip.`,
+	);
+	process.exitCode = 1;
+}
+
 if (problems > 0) process.exitCode = 1;
