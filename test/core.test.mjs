@@ -114,10 +114,20 @@ writeFileSync(
 	["---", "name: manager", "tools: read, write", "thinking: high", "---", "", "# Body", "", "Do the thing."].join("\n"),
 );
 
-for (const [label, mod] of [["core", core]]) {
-	check(`${label}: frontmatter stripped`, mod.stripFrontmatter("---\ntools: x\n---\nBody") === "Body");
-	check(`${label}: a body without frontmatter is untouched`, mod.stripFrontmatter("Just text") === "Just text");
-	check(`${label}: empty input does not throw`, mod.stripFrontmatter(null) === "");
+/* Every assertion in this section runs ONCE, against the shared core. It used to run twice —
+ * once against a per-consumer fallback copy that no longer exists — so the one-element loop
+ * `for (const [label, mod] of [["core", core]])` was collapsed into a plain block. The braces it
+ * already were (local scope, so the next section may declare `mode` too) are kept; what is
+ * gone is the loop header, and with it the source reading as a paired comparison that runs
+ * one arm. A reader counting coverage from the source was over-counting every assertion twice.
+ *
+ * That is also why assertion names below no longer start `core: `: the label existed only to
+ * distinguish the two runs, and the section comment does that now.
+ */
+{
+	check("frontmatter stripped", core.stripFrontmatter("---\ntools: x\n---\nBody") === "Body");
+	check("a body without frontmatter is untouched", core.stripFrontmatter("Just text") === "Just text");
+	check("empty input does not throw", core.stripFrontmatter(null) === "");
 
 	// CRLF. The closing delimiter ends `---\r\n`, which the old `\n---` did not
 	// match, so a file checked out on Windows or written by a CRLF editor passed
@@ -126,63 +136,63 @@ for (const [label, mod] of [["core", core]]) {
 	// That is the whole point of the function, so it is asserted from both ends:
 	// the strip itself, and the read it feeds.
 	check(
-		`${label}: CRLF frontmatter is stripped`,
-		mod.stripFrontmatter("---\r\ntools: x\r\n---\r\nBody") === "Body",
-		JSON.stringify(mod.stripFrontmatter("---\r\ntools: x\r\n---\r\nBody")),
+		`CRLF frontmatter is stripped`,
+		core.stripFrontmatter("---\r\ntools: x\r\n---\r\nBody") === "Body",
+		JSON.stringify(core.stripFrontmatter("---\r\ntools: x\r\n---\r\nBody")),
 	);
 	check(
-		`${label}: CRLF frontmatter does not swallow the body`,
-		!mod.stripFrontmatter("---\r\ntools: read, write\r\n---\r\n# Body\r\n").includes("tools:"),
+		`CRLF frontmatter does not swallow the body`,
+		!core.stripFrontmatter("---\r\ntools: read, write\r\n---\r\n# Body\r\n").includes("tools:"),
 	);
 	// Nothing here rewrites line endings inside the body: the trailing trim() only
 	// touches the ends, and rewriting a prompt's interior line endings would be
 	// a change nobody asked for. What matters is that the frontmatter is GONE
 	// rather than re-emitted with its delimiters.
 	check(
-		`${label}: a CRLF body with no frontmatter keeps its text`,
-		mod.stripFrontmatter("Just text\r\nmore") === "Just text\r\nmore",
-		JSON.stringify(mod.stripFrontmatter("Just text\r\nmore")),
+		`a CRLF body with no frontmatter keeps its text`,
+		core.stripFrontmatter("Just text\r\nmore") === "Just text\r\nmore",
+		JSON.stringify(core.stripFrontmatter("Just text\r\nmore")),
 	);
 	// A file that opens with a horizontal rule is not frontmatter, and neither
 	// line ending may swallow it: the pattern needs a SECOND --- to close.
 	check(
-		`${label}: a leading --- with no closing delimiter is kept`,
-		mod.stripFrontmatter("---\nnot frontmatter") === "---\nnot frontmatter",
-		JSON.stringify(mod.stripFrontmatter("---\nnot frontmatter")),
+		`a leading --- with no closing delimiter is kept`,
+		core.stripFrontmatter("---\nnot frontmatter") === "---\nnot frontmatter",
+		JSON.stringify(core.stripFrontmatter("---\nnot frontmatter")),
 	);
 	check(
-		`${label}: a CRLF --- with no closing delimiter is kept`,
-		mod.stripFrontmatter("---\r\nnot frontmatter") === "---\r\nnot frontmatter",
-		JSON.stringify(mod.stripFrontmatter("---\r\nnot frontmatter")),
+		`a CRLF --- with no closing delimiter is kept`,
+		core.stripFrontmatter("---\r\nnot frontmatter") === "---\r\nnot frontmatter",
+		JSON.stringify(core.stripFrontmatter("---\r\nnot frontmatter")),
 	);
 
-	const loaded = mod.readPromptFile(goodPrompt, "test manager");
-	check(`${label}: prompt body loaded`, loaded.includes("Do the thing."));
-	check(`${label}: tools: line removed`, !loaded.includes("tools:"), loaded.slice(0, 40));
-	check(`${label}: a good load is not degraded`, mod.isDegradedPrompt(loaded) === false);
+	const loaded = core.readPromptFile(goodPrompt, "test manager");
+	check("prompt body loaded", loaded.includes("Do the thing."));
+	check("tools: line removed", !loaded.includes("tools:"), loaded.slice(0, 40));
+	check("a good load is not degraded", core.isDegradedPrompt(loaded) === false);
 
-	const missing = mod.readPromptFile(join(tmp, "nope.md"), "Blender manager");
-	check(`${label}: a missing prompt degrades loudly`, mod.isDegradedPrompt(missing));
-	check(`${label}: the degradation names the path`, missing.includes(join(tmp, "nope.md")));
-	check(`${label}: the degradation names the role`, missing.includes("Blender manager"));
+	const missing = core.readPromptFile(join(tmp, "nope.md"), "Blender manager");
+	check("a missing prompt degrades loudly", core.isDegradedPrompt(missing));
+	check("the degradation names the path", missing.includes(join(tmp, "nope.md")));
+	check("the degradation names the role", missing.includes("Blender manager"));
 
 	writeFileSync(join(tmp, "empty.md"), "---\nname: x\n---\n\n");
-	check(`${label}: an empty prompt is a failure, not an empty system prompt`, mod.isDegradedPrompt(mod.readPromptFile(join(tmp, "empty.md"), "x")));
+	check("an empty prompt is a failure, not an empty system prompt", core.isDegradedPrompt(core.readPromptFile(join(tmp, "empty.md"), "x")));
 
 	// The same file, CRLF, read through the real path rather than the stripper.
 	writeFileSync(join(tmp, "crlf.md"), ["---", "name: manager", "tools: read, write", "---", "", "# CRLF body"].join("\r\n"));
-	const crlfLoaded = mod.readPromptFile(join(tmp, "crlf.md"), "test manager");
-	check(`${label}: a CRLF prompt loads its body`, crlfLoaded.includes("CRLF body"), JSON.stringify(crlfLoaded.slice(0, 60)));
-	check(`${label}: a CRLF prompt does not leak its tools: line`, !crlfLoaded.includes("tools:"), JSON.stringify(crlfLoaded.slice(0, 80)));
-	check(`${label}: a CRLF prompt does not leak its frontmatter delimiters`, !crlfLoaded.startsWith("---"), JSON.stringify(crlfLoaded.slice(0, 40)));
-	check(`${label}: a CRLF prompt is not reported as degraded`, mod.isDegradedPrompt(crlfLoaded) === false);
+	const crlfLoaded = core.readPromptFile(join(tmp, "crlf.md"), "test manager");
+	check("a CRLF prompt loads its body", crlfLoaded.includes("CRLF body"), JSON.stringify(crlfLoaded.slice(0, 60)));
+	check("a CRLF prompt does not leak its tools: line", !crlfLoaded.includes("tools:"), JSON.stringify(crlfLoaded.slice(0, 80)));
+	check("a CRLF prompt does not leak its frontmatter delimiters", !crlfLoaded.startsWith("---"), JSON.stringify(crlfLoaded.slice(0, 40)));
+	check("a CRLF prompt is not reported as degraded", core.isDegradedPrompt(crlfLoaded) === false);
 
 	// And the failure the old pattern actually caused: an empty-bodied CRLF file
 	// whose frontmatter did not strip. It must be LOUD, not silently empty.
 	writeFileSync(join(tmp, "crlf-empty.md"), ["---", "name: x", "---", ""].join("\r\n"));
 	check(
-		`${label}: a CRLF file that is empty once stripped is a failure, not a silent empty prompt`,
-		mod.isDegradedPrompt(mod.readPromptFile(join(tmp, "crlf-empty.md"), "x")),
+		`a CRLF file that is empty once stripped is a failure, not a silent empty prompt`,
+		core.isDegradedPrompt(core.readPromptFile(join(tmp, "crlf-empty.md"), "x")),
 	);
 }
 
@@ -195,23 +205,26 @@ mkdirSync(join(sideDir, "agents"), { recursive: true });
 writeFileSync(join(sideDir, "agents", "fake-manager.md"), "---\nname: m\n---\n\n## SIDE BODY MARKER\n");
 writeFileSync(join(sideDir, "agents", "exchange.md"), "## EXCHANGE MARKER\n");
 
-for (const [label, mod] of [["core", core]]) {
-	const prompt = mod.composeManagerPrompt({
+/* Collapsed from the same vestigial `for (const [label, mod] of [["core", core]]]` loop; see
+ * the note under the first section below.
+ */
+{
+	const prompt = core.composeManagerPrompt({
 		connectorPath: goodPrompt,
 		connectorRole: "unity-blender manager",
 		sides: [{ label: "Fake side", extension: "pi-fake", primary: join("agents", "fake-manager.md"), extra: join("agents", "exchange.md"), extensionDir: sideDir }],
 	});
 
-	check(`${label}: connector first`, prompt.indexOf("Do the thing.") < prompt.indexOf("# ----"));
-	check(`${label}: side body included`, prompt.includes("## SIDE BODY MARKER"));
-	check(`${label}: side extra file included`, prompt.includes("## EXCHANGE MARKER"));
-	check(`${label}: header states the connector wins`, prompt.includes("wins wherever the two disagree"));
-	check(`${label}: header says not a second manager`, prompt.includes("not as a second manager"));
-	check(`${label}: no frontmatter from the side`, !prompt.includes("name: m"));
+	check("connector first", prompt.indexOf("Do the thing.") < prompt.indexOf("# ----"));
+	check("side body included", prompt.includes("## SIDE BODY MARKER"));
+	check("side extra file included", prompt.includes("## EXCHANGE MARKER"));
+	check("header states the connector wins", prompt.includes("wins wherever the two disagree"));
+	check("header says not a second manager", prompt.includes("not as a second manager"));
+	check("no frontmatter from the side", !prompt.includes("name: m"));
 
 	// Order matters when there are two sides: the last one read must not be
 	// able to outrank the connector by being nearer the end of the prompt.
-	const two = mod.composeManagerPrompt({
+	const two = core.composeManagerPrompt({
 		connectorPath: goodPrompt,
 		connectorRole: "c",
 		sides: [
@@ -219,55 +232,58 @@ for (const [label, mod] of [["core", core]]) {
 			{ label: "Two", extension: "pi-fake", primary: join("agents", "fake-manager.md"), extensionDir: sideDir },
 		],
 	});
-	check(`${label}: side order preserved`, two.indexOf("# ---- One") < two.indexOf("# ---- Two"));
-	check(`${label}: connector still before both sides`, two.indexOf("Do the thing.") < two.indexOf("# ---- One"));
+	check("side order preserved", two.indexOf("# ---- One") < two.indexOf("# ---- Two"));
+	check("connector still before both sides", two.indexOf("Do the thing.") < two.indexOf("# ---- One"));
 
 	// A side that cannot load must announce itself in the composed prompt, not
 	// vanish: a manager silently missing one half briefs from the other half.
-	const broken = mod.composeManagerPrompt({
+	const broken = core.composeManagerPrompt({
 		connectorPath: goodPrompt,
 		connectorRole: "c",
 		sides: [{ label: "Gone", extension: "pi-fake", primary: join("agents", "absent.md"), extensionDir: sideDir }],
 	});
-	check(`${label}: a missing side is visible in the prompt`, mod.isDegradedPrompt(broken), "the composition hid a failed side");
-	check(`${label}: a missing side keeps the connector`, broken.includes("Do the thing."));
+	check("a missing side is visible in the prompt", core.isDegradedPrompt(broken), "the composition hid a failed side");
+	check("a missing side keeps the connector", broken.includes("Do the thing."));
 }
 
 /* -------------------------------------------------------------- manager gate -- */
 
-for (const [label, mod] of [["core", core]]) {
-	const mode = mod.createManagerMode({ allowedTools: ["read", "todo", "bash"] });
+/* Collapsed from the same vestigial `for (const [label, mod] of [["core", core]]]` loop; see
+ * the note under the first section below.
+ */
+{
+	const mode = core.createManagerMode({ allowedTools: ["read", "todo", "bash"] });
 	const event = (toolName) => ({ toolName, input: {} });
 	const manager = "You are the manager.";
 
 	// Before engagement nothing is gated: a plain session that calls a
 	// blender_* tool is doing worker-level work and must not be blocked.
-	check(`${label}: ungated before engagement`, mode.checkToolCall(event("write"), manager) === null);
+	check("ungated before engagement", mode.checkToolCall(event("write"), manager) === null);
 
 	mode.markEngaged();
-	check(`${label}: engaged reads the system prompt`, mode.isManagerSession(manager));
-	check(`${label}: allowlisted tool passes`, mode.checkToolCall(event("read"), manager) === null);
-	check(`${label}: write is blocked`, mod_default_block(mode, event("write"), manager, label));
-	check(`${label}: edit is blocked`, mod_default_block(mode, event("edit"), manager, label));
-	check(`${label}: an image read is the application's own refusal`, mode.checkToolCall(event("read"), manager) === null);
+	check("engaged reads the system prompt", mode.isManagerSession(manager));
+	check("allowlisted tool passes", mode.checkToolCall(event("read"), manager) === null);
+	check("write is blocked", mod_default_block(mode, event("write"), manager));
+	check("edit is blocked", mod_default_block(mode, event("edit"), manager));
+	check("an image read is the application's own refusal", mode.checkToolCall(event("read"), manager) === null);
 
 	// The child exception: a subagent inside a manager session is a worker and
 	// must be able to write. Only the <active_agent> tag distinguishes them.
 	const child = `${manager}\n<active_agent name="blender-worker">`;
-	check(`${label}: a child subagent is not the manager`, mode.isManagerSession(child) === false);
-	check(`${label}: a child subagent can write`, mode.checkToolCall(event("write"), child) === null);
+	check("a child subagent is not the manager", mode.isManagerSession(child) === false);
+	check("a child subagent can write", mode.checkToolCall(event("write"), child) === null);
 
 	// The exit command lifts the gate without ending the session.
-	check(`${label}: exit reports it had something to clear`, mode.clearGate() === true);
-	check(`${label}: exit is idempotent`, mode.clearGate() === false);
-	check(`${label}: after exit the session is unblocked`, mode.checkToolCall(event("write"), manager) === null);
+	check("exit reports it had something to clear", mode.clearGate() === true);
+	check("exit is idempotent", mode.clearGate() === false);
+	check("after exit the session is unblocked", mode.checkToolCall(event("write"), manager) === null);
 
 	// A fresh session must inherit nothing, or a /new that follows an engaged
 	// session starts with the gate up and the manager prompt never injected.
-	const next = mod.createManagerMode({ allowedTools: [] });
+	const next = core.createManagerMode({ allowedTools: [] });
 	next.markEngaged();
 	next.reset();
-	check(`${label}: reset clears the gate`, next.isManagerSession(manager) === false);
+	check("reset clears the gate", next.isManagerSession(manager) === false);
 
 	// A /reload is not a fresh session, and this is the case that shipped as a
 	// live bug in all three extensions: pi calls oldRunner.invalidate() and
@@ -276,79 +292,82 @@ for (const [label, mod] of [["core", core]]) {
 	// session that still BEHAVED like the manager had lost the allowlist, the
 	// write/edit refusal and the image refusal in one slash command, silently.
 	for (const reason of ["reload"]) {
-		const reloaded = mod.createManagerMode({ allowedTools: [] });
+		const reloaded = core.createManagerMode({ allowedTools: [] });
 		reloaded.markEngaged();
 		reloaded.reset(reason);
-		check(`${label}: ${reason} keeps the gate up`, reloaded.isManagerSession(manager) === true);
+		check(`${reason} keeps the gate up`, reloaded.isManagerSession(manager) === true);
 		check(
-			`${label}: ${reason} still refuses write`,
+			`${reason} still refuses write`,
 			reloaded.checkToolCall(event("write"), manager)?.block === true,
 		);
 	}
 	// Every OTHER reason is a genuinely different session and must still clear.
 	for (const reason of ["startup", "new", "resume", "fork", undefined]) {
-		const fresh = mod.createManagerMode({ allowedTools: [] });
+		const fresh = core.createManagerMode({ allowedTools: [] });
 		fresh.markEngaged();
 		fresh.reset(reason);
-		check(`${label}: reset(${reason ?? "no argument"}) clears the gate`, fresh.isManagerSession(manager) === false);
+		check(`reset(${reason ?? "no argument"}) clears the gate`, fresh.isManagerSession(manager) === false);
 	}
 
 	// markUsed is the split that fixes the live bug: a session that called one
 	// application tool has every reason to receive the guidance and none to lose
 	// its writes. `isEngaged` is true either way -- that drives the injection --
 	// so only the gate tells the two apart, and it must.
-	const used = mod.createManagerMode({ allowedTools: ["read"] });
+	const used = core.createManagerMode({ allowedTools: ["read"] });
 	used.markUsed();
-	check(`${label}: markUsed counts as engaged`, used.isEngaged() === true);
-	check(`${label}: markUsed leaves write alone`, used.checkToolCall(event("write"), manager) === null);
+	check("markUsed counts as engaged", used.isEngaged() === true);
+	check("markUsed leaves write alone", used.checkToolCall(event("write"), manager) === null);
 	// And /unity on top of it still gates, because the flag is a union not a
 	// latch that a later weaker call could unset.
 	used.markEngaged();
-	check(`${label}: markEngaged after markUsed still gates`, used.isManagerSession(manager) === true);
-	check(`${label}: markEngaged after markUsed refuses write`, mod_default_block(used, event("write"), manager, label));
+	check("markEngaged after markUsed still gates", used.isManagerSession(manager) === true);
+	check("markEngaged after markUsed refuses write", mod_default_block(used, event("write"), manager));
 }
 
 /** Assert a refusal came back with a reason, since a reasonless block stalls. */
-function mod_default_block(mode, event, systemPrompt, label) {
+function mod_default_block(mode, event, systemPrompt) {
 	const refusal = mode.checkToolCall(event, systemPrompt);
 	if (!refusal) {
-		check(`${label}: ${event.toolName} blocked`, false, "the call was allowed");
+		check(`${event.toolName} blocked`, false, "the call was allowed");
 		return false;
 	}
-	check(`${label}: refusal blocks`, refusal.block === true);
-	check(`${label}: refusal has a reason`, typeof refusal.reason === "string" && refusal.reason.length > 0);
+	check("refusal blocks", refusal.block === true);
+	check("refusal has a reason", typeof refusal.reason === "string" && refusal.reason.length > 0);
 	return true;
 }
 
 /* ----------------------------------------------------------------- roster -- */
 
-for (const [label, mod] of [["core", core]]) {
+/* Collapsed from the same vestigial `for (const [label, mod] of [["core", core]]]` loop; see
+ * the note under the first section below.
+ */
+{
 	// `subagent` is on every manager's allowlist, because delegating IS the
 	// manager's job. So a roster check placed after the allowlist never fires
 	// and still reads as protection. Asserted here for that reason specifically.
-	const mode = mod.createManagerMode({
+	const mode = core.createManagerMode({
 		allowedTools: ["read", "subagent", "todo"],
 		agentRoster: ["unity-worker", "unity-critic"],
 	});
 	mode.markEngaged();
 	const spawn = (input) => ({ toolName: "subagent", input });
 
-	check(`${label}: a roster member spawns`, mode.checkToolCall(spawn({ agent: "unity-worker" }), "x") === null);
+	check("a roster member spawns", mode.checkToolCall(spawn({ agent: "unity-worker" }), "x") === null);
 	const off = mode.checkToolCall(spawn({ agent: "some-other-writer" }), "x");
-	check(`${label}: a non-member is refused`, off?.block === true);
-	check(`${label}: the refusal names the roster`, /unity-worker, unity-critic/.test(off?.reason ?? ""));
-	check(`${label}: the refusal names the way out`, /say so in your report/.test(off?.reason ?? ""));
+	check("a non-member is refused", off?.block === true);
+	check("the refusal names the roster", /unity-worker, unity-critic/.test(off?.reason ?? ""));
+	check("the refusal names the way out", /say so in your report/.test(off?.reason ?? ""));
 
 	// Management/control actions carry no `agent`, so refusing them would make
 	// the manager unable to ask what its own children are doing.
-	check(`${label}: a management action is not a spawn`, mode.checkToolCall(spawn({ action: "status" }), "x") === null);
+	check("a management action is not a spawn", mode.checkToolCall(spawn({ action: "status" }), "x") === null);
 	// `agent: null` alone is NOT a control action: a schema declaring
 	// `agent: string | null` sends it for those too, and treating bare null as
 	// "no agent named" would leave the roster bypassable by sending null.
-	check(`${label}: a bare null agent names nothing and cannot be authorised`, mode.checkToolCall(spawn({ agent: null }), "x")?.block === true);
-	check(`${label}: an action with a null agent is a control action`, mode.checkToolCall(spawn({ action: "list", agent: null }), "x") === null);
-	check(`${label}: whitespace is not an agent name`, mode.checkToolCall(spawn({ agent: "  " }), "x") === null);
-	check(`${label}: the roster does not loosen the allowlist`, mode.checkToolCall({ toolName: "bash", input: {} }, "x")?.block === true);
+	check("a bare null agent names nothing and cannot be authorised", mode.checkToolCall(spawn({ agent: null }), "x")?.block === true);
+	check("an action with a null agent is a control action", mode.checkToolCall(spawn({ action: "list", agent: null }), "x") === null);
+	check("whitespace is not an agent name", mode.checkToolCall(spawn({ agent: "  " }), "x") === null);
+	check("the roster does not loosen the allowlist", mode.checkToolCall({ toolName: "bash", input: {} }, "x")?.block === true);
 
 	// Everything below is finding F: an `agent` field the core cannot read as a
 	// roster name used to take the `target.length === 0` allow-branch, because
@@ -368,9 +387,9 @@ for (const [label, mod] of [["core", core]]) {
 	];
 	for (const [what, input] of unusable) {
 		const refusal = mode.checkToolCall(spawn(input), "x");
-		check(`${label}: ${what} is refused`, refusal?.block === true, JSON.stringify(refusal));
+		check(`${what} is refused`, refusal?.block === true, JSON.stringify(refusal));
 		check(
-			`${label}: the refusal for ${what} names the way out`,
+			`the refusal for ${what} names the way out`,
 			refusal?.reason?.includes("the manager may only spawn unity-worker, unity-critic") === true &&
 				/as a plain string in `agent`/.test(refusal?.reason ?? ""),
 			refusal?.reason,
@@ -378,29 +397,35 @@ for (const [label, mod] of [["core", core]]) {
 	}
 	// And the three that must still be allowed, so the fix above is a tightening
 	// of the same rule rather than a new one.
-	check(`${label}: a roster member with surrounding space still spawns`, mode.checkToolCall(spawn({ agent: "  unity-worker  " }), "x") === null);
-	check(`${label}: a control action carrying an explicit null agent is allowed`, mode.checkToolCall(spawn({ action: "status", agent: null }), "x") === null);
+	check("a roster member with surrounding space still spawns", mode.checkToolCall(spawn({ agent: "  unity-worker  " }), "x") === null);
+	check("a control action carrying an explicit null agent is allowed", mode.checkToolCall(spawn({ action: "status", agent: null }), "x") === null);
 
-	const open = mod.createManagerMode({ allowedTools: ["subagent"] });
+	const open = core.createManagerMode({ allowedTools: ["subagent"] });
 	open.markEngaged();
-	check(`${label}: no roster means no roster constraint`, open.checkToolCall(spawn({ agent: "anyone" }), "x") === null);
+	check("no roster means no roster constraint", open.checkToolCall(spawn({ agent: "anyone" }), "x") === null);
 }
 
 // A child subagent is a worker, not the manager, and inherits nothing of the
 // roster. Asserted because the roster sits in the manager path only.
-for (const [label, mod] of [["core", core]]) {
-	const mode = mod.createManagerMode({ allowedTools: [], agentRoster: ["unity-worker"] });
+/* Collapsed from the same vestigial `for (const [label, mod] of [["core", core]]]` loop; see
+ * the note under the first section below.
+ */
+{
+	const mode = core.createManagerMode({ allowedTools: [], agentRoster: ["unity-worker"] });
 	mode.markEngaged();
 	const child = `<active_agent name="unity-worker">`;
-	check(`${label}: a child subagent is not the manager`, mode.isManagerSession(child) === false);
-	check(`${label}: a child subagent is not roster-checked`, mode.checkToolCall({ toolName: "subagent", input: { agent: "other" } }, child) === null);
+	check("a child subagent is not the manager", mode.isManagerSession(child) === false);
+	check("a child subagent is not roster-checked", mode.checkToolCall({ toolName: "subagent", input: { agent: "other" } }, child) === null);
 }
 
 /* ------------------------------------------- application refusals are additive -- */
 
-for (const [label, mod] of [["core", core]]) {
+/* Collapsed from the same vestigial `for (const [label, mod] of [["core", core]]]` loop; see
+ * the note under the first section below.
+ */
+{
 	let called = 0;
-	const mode = mod.createManagerMode({
+	const mode = core.createManagerMode({
 		allowedTools: ["read"],
 		onGateMessage: (event) => {
 			called += 1;
@@ -414,23 +439,26 @@ for (const [label, mod] of [["core", core]]) {
 	// specific refusal. `read` is the real case: it is allowed, yet reading an
 	// image through it is refused.
 	const allowed = mode.checkToolCall({ toolName: "read", input: {} }, "x");
-	check(`${label}: the application hook is consulted even for an allowlisted tool`, called === 1);
-	check(`${label}: an allowlisted call with no refusal is allowed`, allowed === null);
+	check("the application hook is consulted even for an allowlisted tool", called === 1);
+	check("an allowlisted call with no refusal is allowed", allowed === null);
 	const refused = mode.checkToolCall({ toolName: "subagent", input: {} }, "x");
-	check(`${label}: the application refusal wins`, refused?.reason === "roster");
-	check(`${label}: a tool in neither the allowlist nor a refusal is refused by default`, mode.checkToolCall({ toolName: "bash", input: {} }, "x")?.block === true);
+	check("the application refusal wins", refused?.reason === "roster");
+	check("a tool in neither the allowlist nor a refusal is refused by default", mode.checkToolCall({ toolName: "bash", input: {} }, "x")?.block === true);
 }
 
 /* ------------------------------------------------------ context injection -- */
 
-for (const [label, mod] of [["core", core]]) {
+/* Collapsed from the same vestigial `for (const [label, mod] of [["core", core]]]` loop; see
+ * the note under the first section below.
+ */
+{
 	const event = (systemPrompt, sections) => ({ systemPrompt, systemPromptOptions: { sections } });
 	const child = "manager prompt\n<active_agent name=\"blender-worker\">";
 
 	// The constant prompt is a SECTION, the snapshot is a MESSAGE. This is the
 	// whole reason the two are not one thing, so it is asserted rather than
 	// described.
-	const inject = mod.createContextInjection({
+	const inject = core.createContextInjection({
 		section: "blender",
 		customType: "blender_context",
 		timeoutMs: 1234,
@@ -440,9 +468,16 @@ for (const [label, mod] of [["core", core]]) {
 	});
 
 	let out = await inject(event("You are the manager.", {}), {});
-	check(`${label}: constant prompt lands in the section`, out.message.content === "live: selection: Body", out?.message?.content);
-	out = await inject(event("You are the manager.", {}), {});
-	check(`${label}: the section was written`, true);
+	check("constant prompt lands in the section", out.message.content === "live: selection: Body", out?.message?.content);
+	// The section, not the message. The first call above asserts the MESSAGE;
+	// this one asserts the SYSTEM-PROMPT SECTION, which is the property that
+	// has to hold for the caching rule and which the discarded `inject(...)` on
+	// the old second line never actually checked -- it called inject, threw the
+	// result away, and then asserted `true`.
+	const parentSectionsForSnapshot = {};
+	out = await inject(event("You are the manager.", parentSectionsForSnapshot), {});
+	check("the section was written", parentSectionsForSnapshot.blender === "CONSTANT PROMPT", JSON.stringify(parentSectionsForSnapshot));
+	check("the snapshot is a message, not a second section", out.message.content === "live: selection: Body");
 
 	// A child gets the constant prompt but never the snapshot: the snapshot
 	// describes the PARENT's selection, and a worker's brief already names its
@@ -450,11 +485,11 @@ for (const [label, mod] of [["core", core]]) {
 	// own empty selection and reads as truth.
 	const sections = {};
 	const childOut = await inject(event(child, sections), {});
-	check(`${label}: a child gets the section`, sections.blender === "CONSTANT PROMPT", JSON.stringify(sections));
-	check(`${label}: a child gets no snapshot`, childOut === undefined);
+	check("a child gets the section", sections.blender === "CONSTANT PROMPT", JSON.stringify(sections));
+	check("a child gets no snapshot", childOut === undefined);
 
 	// An unengaged session gets nothing at all. A tool call is not engagement.
-	const idle = mod.createContextInjection({
+	const idle = core.createContextInjection({
 		section: "blender",
 		customType: "blender_context",
 		shouldInject: () => false,
@@ -463,13 +498,13 @@ for (const [label, mod] of [["core", core]]) {
 		formatState: (state) => `live: ${state.line}`,
 	});
 	const idleSections = {};
-	check(`${label}: an unengaged session gets nothing`, (await idle(event("plain", idleSections), {})) === undefined);
-	check(`${label}: an unengaged session gets no section`, idleSections.blender === undefined);
+	check("an unengaged session gets nothing", (await idle(event("plain", idleSections), {})) === undefined);
+	check("an unengaged session gets no section", idleSections.blender === undefined);
 
 	// A FAILED fetch must inject the loud notice, never an empty message. An
 	// empty snapshot is indistinguishable from "nothing to inject" and the
 	// manager then mutates whatever it wrongly believes is selected.
-	const failing = mod.createContextInjection({
+	const failing = core.createContextInjection({
 		section: "blender",
 		customType: "blender_context",
 		timeoutMs: 999,
@@ -480,12 +515,12 @@ for (const [label, mod] of [["core", core]]) {
 		formatState: () => "never reached",
 	});
 	const failed = await failing(event("manager", {}), {});
-	check(`${label}: a failed fetch injects a notice`, (failed?.message?.content ?? "").includes("UNAVAILABLE"), failed?.message?.content);
-	check(`${label}: the notice names the timeout`, failed.message.content.includes("999 ms"));
-	check(`${label}: the notice refuses stale assumptions`, failed.message.content.includes("Do NOT assume"));
-	check(`${label}: the notice names the failure`, failed.message.content.includes("bridge did not answer"));
-	check(`${label}: the notice tells the manager what to do`, failed.message.content.includes("Call the session-context tool"));
-	check(`${label}: the failure path never formats state`, failed.message.content !== "never reached");
+	check("a failed fetch injects a notice", (failed?.message?.content ?? "").includes("UNAVAILABLE"), failed?.message?.content);
+	check("the notice names the timeout", failed.message.content.includes("999 ms"));
+	check("the notice refuses stale assumptions", failed.message.content.includes("Do NOT assume"));
+	check("the notice names the failure", failed.message.content.includes("bridge did not answer"));
+	check("the notice tells the manager what to do", failed.message.content.includes("Call the session-context tool"));
+	check("the failure path never formats state", failed.message.content !== "never reached");
 
 	// A fetchState with NO timeout of its own must still be bounded by the
 	// core, or `timeoutMs` is only a promise about the failure TEXT. This is the
@@ -493,7 +528,7 @@ for (const [label, mod] of [["core", core]]) {
 	// formatState, and nothing enforced it, so a bare fetch hung the turn and
 	// the UNAVAILABLE notice never fired. Latent only because both consumers wrap
 	// their own.
-	const hanging = mod.createContextInjection({
+	const hanging = core.createContextInjection({
 		section: "blender",
 		customType: "blender_context",
 		timeoutMs: 40,
@@ -502,14 +537,14 @@ for (const [label, mod] of [["core", core]]) {
 		formatState: () => "never reached",
 	});
 	const hung = await hanging(event("manager", {}), {});
-	check(`${label}: a fetch that never answers is bounded by the core's timeout`, (hung?.message?.content ?? "").includes("UNAVAILABLE"), "the turn hung instead");
-	check(`${label}: the core's timeout is named in the notice`, hung.message.content.includes("40 ms"));
-	check(`${label}: the core's timeout explains itself`, /did not answer within 40 ms/.test(hung.message.content), hung.message.content);
-	check(`${label}: a timed-out fetch still injects the do-not-assume rule`, hung.message.content.includes("Do NOT assume"));
+	check("a fetch that never answers is bounded by the core's timeout", (hung?.message?.content ?? "").includes("UNAVAILABLE"), "the turn hung instead");
+	check("the core's timeout is named in the notice", hung.message.content.includes("40 ms"));
+	check("the core's timeout explains itself", /did not answer within 40 ms/.test(hung.message.content), hung.message.content);
+	check("a timed-out fetch still injects the do-not-assume rule", hung.message.content.includes("Do NOT assume"));
 
 	// The guard must not outlive the fetch it was guarding: a pending timer per
 	// turn would hold a session open after every fast success.
-	const slowButFinite = mod.createContextInjection({
+	const slowButFinite = core.createContextInjection({
 		section: "blender",
 		customType: "blender_context",
 		timeoutMs: 5000,
@@ -520,23 +555,23 @@ for (const [label, mod] of [["core", core]]) {
 		},
 		formatState: (state) => `live: ${state.line}`,
 	});
-	check(`${label}: a fetch that answers inside the timeout is not raced`, (await slowButFinite(event("manager", {}), {}))?.message?.content === "live: late");
+	check("a fetch that answers inside the timeout is not raced", (await slowButFinite(event("manager", {}), {}))?.message?.content === "live: late");
 
 	// An empty render is "nothing worth injecting", which is different from a
 	// failure: no message at all, and not a misleading notice.
-	const empty = mod.createContextInjection({
+	const empty = core.createContextInjection({
 		section: "blender",
 		customType: "blender_context",
 		getPrompt: () => "P",
 		fetchState: async () => ({}),
 		formatState: () => "   ",
 	});
-	check(`${label}: an empty render injects no message`, (await empty(event("manager", {}), {})) === undefined);
+	check("an empty render injects no message", (await empty(event("manager", {}), {})) === undefined);
 
 	// The two-application manager has no snapshot to prefetch: its live state
 	// arrives from one tool call that reports both sides. It still needs the
 	// section, and the guidance still goes out every turn.
-	const staticInject = mod.createContextInjection({
+	const staticInject = core.createContextInjection({
 		section: "unity_blender",
 		customType: "unity_blender_context",
 		shouldInject: () => true,
@@ -545,9 +580,9 @@ for (const [label, mod] of [["core", core]]) {
 	});
 	const staticSections = {};
 	const staticOut = await staticInject(event("You are the manager.", staticSections), {});
-	check(`${label}: static content lands in the section`, staticSections.unity_blender === "BINDER PROMPT");
-	check(`${label}: static content is injected verbatim`, staticOut?.message?.content === "call unity_blender_status first");
-	check(`${label}: static content is displayable`, staticOut?.message?.display === true);
+	check("static content lands in the section", staticSections.unity_blender === "BINDER PROMPT");
+	check("static content is injected verbatim", staticOut?.message?.content === "call unity_blender_status first");
+	check("static content is displayable", staticOut?.message?.display === true);
 	// A child DOES still get the static guidance, unlike the snapshot. The child
 	// rule exists because a snapshot is the PARENT's and reads deictically
 	// ("your selection"); procedural guidance has no such content to be wrong
@@ -556,14 +591,14 @@ for (const [label, mod] of [["core", core]]) {
 	// a consistency fix.
 	const staticChildSections = {};
 	const staticChildOut = await staticInject(event(child, staticChildSections), {});
-	check(`${label}: static content reaches a child`, staticChildOut?.message?.content === "call unity_blender_status first");
-	check(`${label}: a child still gets the section`, staticChildSections.unity_blender === "BINDER PROMPT");
+	check("static content reaches a child", staticChildOut?.message?.content === "call unity_blender_status first");
+	check("a child still gets the section", staticChildSections.unity_blender === "BINDER PROMPT");
 
 	// Passing both is a caller bug, and a throw beats honouring one of them
 	// quietly -- a fetch paid for and discarded is a wasted bridge round trip.
 	let threw = false;
 	try {
-		mod.createContextInjection({
+		core.createContextInjection({
 			section: "unity_blender",
 			customType: "unity_blender_context",
 			getPrompt: () => "P",
@@ -574,13 +609,13 @@ for (const [label, mod] of [["core", core]]) {
 	} catch {
 		threw = true;
 	}
-	check(`${label}: passing both staticContent and fetchState throws`, threw);
+	check("passing both staticContent and fetchState throws", threw);
 
 	// A manager whose workers already know their side sets
 	// sectionReachesChildren: false, so the section stops at the parent. This is
 	// the two-application manager's shape, and it is the option that keeps the
 	// shared mechanism from quietly changing who sees the prompt.
-	const parentOnly = mod.createContextInjection({
+	const parentOnly = core.createContextInjection({
 		section: "unity_blender",
 		customType: "unity_blender_context",
 		shouldInject: () => true,
@@ -590,10 +625,10 @@ for (const [label, mod] of [["core", core]]) {
 	});
 	const childSections = {};
 	await parentOnly(event(child, childSections), {});
-	check(`${label}: sectionReachesChildren:false withholds the section from a child`, childSections.unity_blender === undefined, JSON.stringify(childSections));
+	check("sectionReachesChildren:false withholds the section from a child", childSections.unity_blender === undefined, JSON.stringify(childSections));
 	const parentSections = {};
 	await parentOnly(event("You are the manager.", parentSections), {});
-	check(`${label}: sectionReachesChildren:false still gives the parent the section`, parentSections.unity_blender === "CONNECTOR PROMPT");
+	check("sectionReachesChildren:false still gives the parent the section", parentSections.unity_blender === "CONNECTOR PROMPT");
 }
 
 /* ------------------------------------------- the shim contract matches reality -- */
