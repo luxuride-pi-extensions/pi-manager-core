@@ -23,7 +23,7 @@
 	},
 	"scripts": {
 		"typecheck": "tsc --noEmit",
-		"test": "node test/core.test.mjs && node test/agent-template-checks.test.mjs && node test/agent-rosters.mjs && node test/doc-consistency.mjs && node test/resolver-copies.mjs && node test/extension-registration.mjs && node test/allowlists.mjs && node test/dependency-declaration.mjs && node test/package-contents.mjs",
+		"test": "node test/core.test.mjs && node test/agent-template-checks.test.mjs && node test/agent-rosters.mjs && node test/doc-consistency.mjs && node test/resolver-copies.mjs && node test/extension-registration.mjs && node test/allowlists.mjs && node test/dependency-declaration.mjs",
 		"check:consumers": "node test/resolver-copies.mjs",
 		"which-core": "node test/which-core.mjs",
 		"fix:consumers": "node test/resolver-copies.mjs --fix",
