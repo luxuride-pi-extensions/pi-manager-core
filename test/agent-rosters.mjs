@@ -28,7 +28,7 @@
  * PI_REQUIRE_CONSUMERS=1, which is what the `consumers` job in ci.yml sets.
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
