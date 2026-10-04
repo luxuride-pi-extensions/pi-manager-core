@@ -22,9 +22,18 @@ import { getInstalledExtensionDir } from "./paths.js";
  * running in it, so a stray `tools:` line in a system prompt is inert at best
  * and actively misleading at worst — it advertises a capability the session
  * does not have and names a file the user cannot see.
+ *
+ * CRLF is accepted because a file edited on Windows, or checked out with
+ * core.autocrlf, ends its closing delimiter `---\r\n` — and the old pattern's
+ * `\n---` did not match that. The consequence was not a cosmetic miss: the
+ * WHOLE file passed through, frontmatter included, so readPromptFile saw
+ * non-empty content, judged the read a success, and did NOT degrade. The
+ * system prompt then began with `---`, `tools: read, write`, and a line naming
+ * a file the user cannot see — the precise failure this function exists to
+ * prevent, reached by checking out the repository on the wrong platform.
  */
 export function stripFrontmatter(source) {
-	return String(source ?? "").replace(/^---[\s\S]*?\n---\n/, "").trim();
+	return String(source ?? "").replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "").trim();
 }
 
 /**

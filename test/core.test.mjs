@@ -119,6 +119,42 @@ for (const [label, mod] of [["core", core]]) {
 	check(`${label}: a body without frontmatter is untouched`, mod.stripFrontmatter("Just text") === "Just text");
 	check(`${label}: empty input does not throw`, mod.stripFrontmatter(null) === "");
 
+	// CRLF. The closing delimiter ends `---\r\n`, which the old `\n---` did not
+	// match, so a file checked out on Windows or written by a CRLF editor passed
+	// through WHOLE -- and because readPromptFile only degrades on empty content,
+	// the `tools:` line reached the system prompt as if the read had succeeded.
+	// That is the whole point of the function, so it is asserted from both ends:
+	// the strip itself, and the read it feeds.
+	check(
+		`${label}: CRLF frontmatter is stripped`,
+		mod.stripFrontmatter("---\r\ntools: x\r\n---\r\nBody") === "Body",
+		JSON.stringify(mod.stripFrontmatter("---\r\ntools: x\r\n---\r\nBody")),
+	);
+	check(
+		`${label}: CRLF frontmatter does not swallow the body`,
+		!mod.stripFrontmatter("---\r\ntools: read, write\r\n---\r\n# Body\r\n").includes("tools:"),
+	);
+	// The trailing trim() normalises CRLF to LF throughout, which is fine: the
+	// prompt is markdown handed to a model, and the only thing that mattered is
+	// that the frontmatter is GONE rather than re-emitted with its delimiters.
+	check(
+		`${label}: a CRLF body with no frontmatter keeps its text`,
+		mod.stripFrontmatter("Just text\r\nmore") === "Just text\nmore",
+		JSON.stringify(mod.stripFrontmatter("Just text\r\nmore")),
+	);
+	// A file that opens with a horizontal rule is not frontmatter, and neither
+	// line ending may swallow it: the pattern needs a SECOND --- to close.
+	check(
+		`${label}: a leading --- with no closing delimiter is kept`,
+		mod.stripFrontmatter("---\nnot frontmatter") === "---\nnot frontmatter",
+		JSON.stringify(mod.stripFrontmatter("---\nnot frontmatter")),
+	);
+	check(
+		`${label}: a CRLF --- with no closing delimiter is kept`,
+		mod.stripFrontmatter("---\r\nnot frontmatter") === "---\nnot frontmatter",
+		JSON.stringify(mod.stripFrontmatter("---\r\nnot frontmatter")),
+	);
+
 	const loaded = mod.readPromptFile(goodPrompt, "test manager");
 	check(`${label}: prompt body loaded`, loaded.includes("Do the thing."));
 	check(`${label}: tools: line removed`, !loaded.includes("tools:"), loaded.slice(0, 40));
@@ -131,6 +167,22 @@ for (const [label, mod] of [["core", core]]) {
 
 	writeFileSync(join(tmp, "empty.md"), "---\nname: x\n---\n\n");
 	check(`${label}: an empty prompt is a failure, not an empty system prompt`, mod.isDegradedPrompt(mod.readPromptFile(join(tmp, "empty.md"), "x")));
+
+	// The same file, CRLF, read through the real path rather than the stripper.
+	writeFileSync(join(tmp, "crlf.md"), ["---", "name: manager", "tools: read, write", "---", "", "# CRLF body"].join("\r\n"));
+	const crlfLoaded = mod.readPromptFile(join(tmp, "crlf.md"), "test manager");
+	check(`${label}: a CRLF prompt loads its body`, crlfLoaded.includes("CRLF body"), JSON.stringify(crlfLoaded.slice(0, 60)));
+	check(`${label}: a CRLF prompt does not leak its tools: line`, !crlfLoaded.includes("tools:"), JSON.stringify(crlfLoaded.slice(0, 80)));
+	check(`${label}: a CRLF prompt does not leak its frontmatter delimiters`, !crlfLoaded.startsWith("---"), JSON.stringify(crlfLoaded.slice(0, 40)));
+	check(`${label}: a CRLF prompt is not reported as degraded`, mod.isDegradedPrompt(crlfLoaded) === false);
+
+	// And the failure the old pattern actually caused: an empty-bodied CRLF file
+	// whose frontmatter did not strip. It must be LOUD, not silently empty.
+	writeFileSync(join(tmp, "crlf-empty.md"), ["---", "name: x", "---", ""].join("\r\n"));
+	check(
+		`${label}: a CRLF file that is empty once stripped is a failure, not a silent empty prompt`,
+		mod.isDegradedPrompt(mod.readPromptFile(join(tmp, "crlf-empty.md"), "x")),
+	);
 }
 
 /* -------------------------------------------------------- prompt composition -- */
