@@ -8,6 +8,23 @@
  */
 
 import { readActiveAgentName } from "./session.js";
+import { STATIC_TEXT_BUDGET, clampText, fenceUntrusted } from "./untrusted.js";
+
+/**
+ * How an error is reported inside the UNAVAILABLE notice, bounded.
+ *
+ * UNTRUSTED INPUT. An `Error.message` here is whatever the bridge process put
+ * there — a subprocess reading a socket can be answered with bytes an
+ * attacker-influenced input produced — and it lands in a message injected into
+ * the model's context every turn it fails. So it is truncated to
+ * ERROR_TEXT_BUDGET and fenced with a label that says it is data, not
+ * instructions. See shared/untrusted.js for why that is the honest subset and
+ * not a sanitiser.
+ */
+function describeCause(error) {
+	const cause = error instanceof Error ? error.message : String(error);
+	return `; the bridge said:\n\n${fenceUntrusted(cause)}`;
+}
 
 /**
  * The per-turn live-state snapshot, injected as its own message.
@@ -103,8 +120,20 @@ export function createContextInjection({
 		}
 
 		// Static path: no snapshot rule, no failure rule, nothing to fetch.
+		//
+		// Clamped because a CONSTANT message is re-sent every turn in every
+		// session that loads this extension, so an unbounded one is the cheapest
+		// possible context bloat: it is not noticed in any single turn and it is
+		// paid for in every one. An 8 KB ceiling is far above what any consumer
+		// sends today, so this is a bound and not a policy.
 		if (staticContent !== null) {
-			return { message: { customType, content: staticContent, display: true } };
+			return {
+				message: {
+					customType,
+					content: clampText(staticContent, STATIC_TEXT_BUDGET),
+					display: true,
+				},
+			};
 		}
 
 		// Rule 2: the snapshot is the parent's, so a child never gets it.
@@ -143,7 +172,7 @@ export function createContextInjection({
 					: "Call the session-context tool before mutating anything, and ask the user if it also fails.";
 			content = [
 				`Live ${section} state is UNAVAILABLE for this turn (the bridge did not answer within ` +
-					`${timeoutMs} ms: ${error instanceof Error ? error.message : String(error)}).`,
+					`${timeoutMs} ms${describeCause(error)}).`,
 				`Do NOT assume any ${assumeNothingAbout} from earlier turns.`,
 				recover,
 			].join("\n");

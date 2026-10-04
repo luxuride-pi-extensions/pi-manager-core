@@ -13,6 +13,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { getInstalledExtensionDir } from "./paths.js";
+import { clampText, fenceUntrusted } from "./untrusted.js";
 
 /**
  * Strip an agent template's frontmatter.
@@ -43,6 +44,14 @@ export function stripFrontmatter(source) {
  * A manager whose prompt failed to load still spawns workers, still briefs
  * them, and briefs them from generic guidance — the user learns about the
  * missing prompt by paying for iterations, not by being told.
+ *
+ * This string is not only a log line: `composeManagerPrompt` pastes it into the
+ * manager's SYSTEM PROMPT. So both interpolated values are treated as untrusted
+ * and bounded. The PATH is the application's own and is clamped only for length;
+ * the ERROR MESSAGE can be anything the filesystem layer produced, including a
+ * filename an attacker chose, and it is fenced as data. The notice as a whole is
+ * bounded too — see DEGRADATION_BUDGET — because a diagnostic that does not fit
+ * is still a diagnostic, and a 40 KB ENOENT is not.
  */
 export function readPromptFile(path, role) {
 	try {
@@ -50,14 +59,32 @@ export function readPromptFile(path, role) {
 		if (!body) throw new Error("the file is empty after its frontmatter was stripped");
 		return body;
 	} catch (error) {
-		return (
-			`The ${role} prompt could not be read from ${path}, so this session is missing that half of ` +
-			`its instructions (${error instanceof Error ? error.message : String(error)}). ` +
-			"Say so plainly when the task touches that side; do not fall back to guessing at its " +
-			"loops, its agents, or its acceptance rules."
+		const cause = error instanceof Error ? error.message : String(error);
+		return clampText(
+			`The ${role} prompt could not be read from ${clampText(String(path), PATH_BUDGET)}, so this ` +
+				`session is missing that half of its instructions. It reported:\n\n${fenceUntrusted(cause)}.\n` +
+				"Say so plainly when the task touches that side; do not fall back to guessing at its " +
+				"loops, its agents, or its acceptance rules.",
+			DEGRADATION_BUDGET,
 		);
 	}
 }
+
+/**
+ * How long a degradation notice may be, in total.
+ *
+ * 1.2 KB. It has to carry a role, a path, an error and the recovery instruction,
+ * which is roughly what the above produces for a real failure; the budget leaves
+ * room for a long path and a multi-line error without leaving room for a payload.
+ *
+ * Module-local on purpose: it is not part of the core's public surface, and
+ * adding an export here would mean declaring it in manager-core.ts and recopying
+ * three consumers to say what this file already says.
+ */
+const DEGRADATION_BUDGET = 1_200;
+
+/** How much of the path is kept. A path is the application's own, not the bridge's. */
+const PATH_BUDGET = 300;
 
 /** True when `readPromptFile` degraded, so a caller can log it once. */
 export function isDegradedPrompt(text) {
