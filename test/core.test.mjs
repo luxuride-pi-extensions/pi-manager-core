@@ -134,12 +134,13 @@ for (const [label, mod] of [["core", core]]) {
 		`${label}: CRLF frontmatter does not swallow the body`,
 		!mod.stripFrontmatter("---\r\ntools: read, write\r\n---\r\n# Body\r\n").includes("tools:"),
 	);
-	// The trailing trim() normalises CRLF to LF throughout, which is fine: the
-	// prompt is markdown handed to a model, and the only thing that mattered is
-	// that the frontmatter is GONE rather than re-emitted with its delimiters.
+	// Nothing here rewrites line endings inside the body: the trailing trim() only
+	// touches the ends, and rewriting a prompt's interior line endings would be
+	// a change nobody asked for. What matters is that the frontmatter is GONE
+	// rather than re-emitted with its delimiters.
 	check(
 		`${label}: a CRLF body with no frontmatter keeps its text`,
-		mod.stripFrontmatter("Just text\r\nmore") === "Just text\nmore",
+		mod.stripFrontmatter("Just text\r\nmore") === "Just text\r\nmore",
 		JSON.stringify(mod.stripFrontmatter("Just text\r\nmore")),
 	);
 	// A file that opens with a horizontal rule is not frontmatter, and neither
@@ -151,7 +152,7 @@ for (const [label, mod] of [["core", core]]) {
 	);
 	check(
 		`${label}: a CRLF --- with no closing delimiter is kept`,
-		mod.stripFrontmatter("---\r\nnot frontmatter") === "---\nnot frontmatter",
+		mod.stripFrontmatter("---\r\nnot frontmatter") === "---\r\nnot frontmatter",
 		JSON.stringify(mod.stripFrontmatter("---\r\nnot frontmatter")),
 	);
 
