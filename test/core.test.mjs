@@ -34,6 +34,72 @@ function check(name, condition, detail = "") {
 	failures.push(detail ? `${name} -- ${detail}` : name);
 }
 
+/**
+ * Every exported value, checked for the shape the hand-written `.d.ts` claims.
+ *
+ * This exists because `checkJs: false` in tsconfig.json means no compiler ever
+ * looks at the `.js` bodies: a `.d.ts` that misstates a signature is invisible
+ * to `npm run typecheck`, and the shim-contract check below compares NAMES only.
+ * A consumer written in TypeScript would then fail to compile — or, worse,
+ * compile against a promise the function does not keep.
+ *
+ * So this asserts `typeof` and arity for every export, and `instanceof RegExp`
+ * for the one that declares a regex. Both are decidable at runtime and neither
+ * can be satisfied by a misstatement. CHILD_AGENT_PROMPT_PATTERN is excluded
+ * from the arity table only because a RegExp literal has no declared arity in
+ * the contract — it is checked by type here and by capture behaviour in the
+ * assertions below.
+ */
+const ARITY = {
+	xdgCacheHome: 0,
+	// 1, not the 2 the shim contract's `cwd?` suggests: the second parameter
+	// has a default, and `Function.length` counts only parameters before the
+	// first default. Stating it as 2 would have been a test that could never
+	// pass, so the assertion documents the rule instead.
+	expandUserPath: 1,
+	getPiAgentDir: 0,
+	getInstalledExtensionDir: 1,
+	stripFrontmatter: 1,
+	readPromptFile: 2,
+	isDegradedPrompt: 1,
+	composeManagerPrompt: 1,
+	readActiveAgentName: 1,
+	createManagerMode: 0,
+	createContextInjection: 1,
+	registerEngageCommand: 2,
+	registerExitCommand: 2,
+};
+
+for (const [name, arity] of Object.entries(ARITY)) {
+	check(`${name} is a function`, typeof core[name] === "function", `typeof is ${typeof core[name]}`);
+	check(`${name} takes ${arity} declared argument(s)`, core[name]?.length === arity, `declared arity is ${core[name]?.length}`);
+}
+check(
+	"CHILD_AGENT_PROMPT_PATTERN is a RegExp, as the shim contract declares",
+	core.CHILD_AGENT_PROMPT_PATTERN instanceof RegExp,
+	`typeof is ${typeof core.CHILD_AGENT_PROMPT_PATTERN}`,
+);
+
+// createManagerMode and createContextInjection both take ONE optional object, so
+// their declared arity of 0 and 1 is what a default parameter yields. The two
+// checks below pin that down behaviourally rather than by counting: a function
+// that destructures its options and is called with none must not throw.
+check(
+	"createManagerMode() with no options at all still constructs",
+	typeof core.createManagerMode().checkToolCall === "function",
+);
+check(
+	"createContextInjection() rejects the both-at-once caller bug by throwing, not by signature",
+	(() => {
+		try {
+			core.createContextInjection({ section: "s", customType: "c", getPrompt: () => "", staticContent: "x", fetchState: async () => ({}) });
+			return false;
+		} catch {
+			return true;
+		}
+	})(),
+);
+
 const tmp = mkdtempSync(join(tmpdir(), "manager-core-test-"));
 
 /* ---------------------------------------------------------- prompt loading -- */

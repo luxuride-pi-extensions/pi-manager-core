@@ -19,18 +19,25 @@
  * Per docs/packages.md, a package's runtime dependencies go in
  * `dependencies` and imported Pi packages in `peerDependencies` with a "*"
  * range, unbundled. The core is a Pi package, so `*` is the right range here.
+ *
+ * An absent consumer checkout used to be printed as `ok <name> (checkout not
+ * present, skipped)` — an `ok` line for a check that did not run, which is the
+ * one thing this file must never emit. It is now a counted skip on stderr, and
+ * fatal under PI_REQUIRE_CONSUMERS=1 (the `consumers` job in ci.yml), where the
+ * whole point of the job is that all four repositories are present.
  */
 
 import { readFileSync, existsSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const REPO_ROOT = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 const CORE_NAME = "pi-manager-core";
 const CONSUMERS = ["pi-blender", "pi-unity", "pi-unity-blender"];
+const REQUIRED = process.env.PI_REQUIRE_CONSUMERS === "1";
 
 const failures = [];
+const skipped = [];
 const fail = (message) => failures.push(message);
 const ok = (message) => console.log(`ok ${message}`);
 
@@ -73,7 +80,7 @@ if (corePkg) {
 for (const name of CONSUMERS) {
 	const dir = join(REPO_ROOT, "..", name);
 	if (!existsSync(dir)) {
-		console.log(`ok ${name} (checkout not present, skipped)`);
+		skipped.push(name);
 		continue;
 	}
 	const pkg = readJson(join(dir, "package.json"));
@@ -103,9 +110,19 @@ for (const name of CONSUMERS) {
 	}
 }
 
+for (const name of skipped) console.error(`SKIPPED ${name} (checkout not present) — no declaration was verified`);
 if (failures.length > 0) {
 	console.error(`\n${failures.length} problem(s):`);
 	for (const message of failures) console.error(`  - ${message}`);
 	process.exit(1);
 }
-console.log(`\nall dependency declarations are consistent`);
+if (skipped.length > 0 && REQUIRED) {
+	console.error(
+		`\nPI_REQUIRE_CONSUMERS=1 and ${skipped.length} consumer checkout(s) are absent, so no dependency ` +
+			"declaration was checked at all. A green run here means nothing.",
+	);
+	process.exit(1);
+}
+console.log(
+	`\nall dependency declarations are consistent` + (skipped.length ? `, ${skipped.length} NOT VERIFIED` : ""),
+);

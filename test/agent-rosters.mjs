@@ -19,6 +19,13 @@
  *     no definition, which fails later and further from the cause.
  *
  *   node test/agent-rosters.mjs
+ *   node test/agent-rosters.mjs --fix
+ *
+ * An absent consumer checkout cannot be read, so it is reported rather than
+ * silently passed: the roster rule is the core's but the NAMES are declared
+ * twice, and a green run that verified nothing is worse than a red one. The
+ * skip is allowed locally (a one-repo clone is normal) and fatal under
+ * PI_REQUIRE_CONSUMERS=1, which is what the `consumers` job in ci.yml sets.
  */
 
 import { existsSync, readFileSync } from "node:fs";
@@ -29,6 +36,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "..");
 const PROJECTS = resolve(REPO, "..");
 const FIX = process.argv.includes("--fix");
+const REQUIRED = process.env.PI_REQUIRE_CONSUMERS === "1";
 
 /** Where each manager declares its roster, and the prompt that must agree. */
 const CONSUMERS = [
@@ -76,7 +84,7 @@ const check = (name, ok, detail = "") => {
 for (const { repo, set, prompt } of CONSUMERS) {
 	const dir = join(PROJECTS, repo);
 	if (!existsSync(dir)) {
-		skipped.push(`${repo} (not checked out)`);
+		skipped.push(`${repo} (not checked out at ${dir})`);
 		continue;
 	}
 	const label = repo;
@@ -156,9 +164,19 @@ for (const { repo, set, prompt } of CONSUMERS) {
 	}
 }
 
-for (const s of skipped) console.log(`skipped ${s}`);
-console.log(`${passed} passed, ${problems} problem(s)`);
+for (const s of skipped) console.error(`SKIPPED ${s} — no roster was verified for this consumer`);
+console.log(
+	`${passed} passed, ${problems} problem(s)` +
+		(skipped.length ? `, ${skipped.length} NOT VERIFIED` : ""),
+);
 if (problems > 0) {
 	for (const f of failures) console.error(`FAIL ${f}`);
+	process.exitCode = 1;
+}
+if (skipped.length > 0 && REQUIRED) {
+	console.error(
+		`\nPI_REQUIRE_CONSUMERS=1 and ${skipped.length} consumer checkout(s) are absent, so no roster was ` +
+			"compared at all. A green run here means nothing.",
+	);
 	process.exitCode = 1;
 }

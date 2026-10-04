@@ -24,8 +24,16 @@
  *   node test/resolver-copies.mjs            # report
  *   node test/resolver-copies.mjs --fix      # rewrite the copies
  *
- * A consumer that is not checked out is skipped, not failed: this repo has to
- * be testable on its own.
+ * A consumer that is not checked out cannot be diffed, and that has to be a
+ * DECISION rather than a silent green. This file is the ONLY check verifying
+ * that 2372 duplicated lines are byte-identical across the three consumers; a
+ * skip here that prints like a pass means the whole anti-drift story can report
+ * success having verified nothing. So an absent checkout is reported on stderr,
+ * counted in the summary, and named in the exit path when PI_REQUIRE_CONSUMERS=1
+ * — the same gate extension-registration.mjs and allowlists.mjs already use, set
+ * by the `consumers` job in ci.yml, which checks all three out on purpose.
+ * Locally, where a one-repo clone is the normal case, the skip is still allowed
+ * but is never printed as `ok`.
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -36,6 +44,9 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "..");
 const PROJECTS = resolve(REPO, "..");
 const FIX = process.argv.includes("--fix");
+
+/** See the header: an absent checkout is a failure where it was meant to be there. */
+const REQUIRED = process.env.PI_REQUIRE_CONSUMERS === "1";
 
 /** The consumers, and the two files each carries a copy of. */
 const CONSUMERS = [
@@ -54,7 +65,7 @@ const skipped = [];
 for (const { repo, shim, checks } of CONSUMERS) {
 	const dir = join(PROJECTS, repo);
 	if (!existsSync(dir)) {
-		skipped.push(`${repo} (not checked out)`);
+		skipped.push(`${repo} (not checked out at ${dir})`);
 		continue;
 	}
 
@@ -103,6 +114,19 @@ function diffLine(expected, actual) {
 	return n;
 }
 
-for (const s of skipped) console.log(`skipped ${s}`);
-console.log(`\n${checked - problems} in sync, ${problems} problem(s)`);
+// stderr on purpose: a skip is not a pass, and a redirected stdout must not let
+// it be read as one. The summary counts them so "6 in sync" is never mistaken
+// for coverage of three consumers when it may be coverage of zero.
+for (const s of skipped) console.error(`SKIPPED ${s} — nothing verified for this consumer`);
+console.log(
+	`\n${checked - problems} in sync, ${problems} problem(s)` +
+		(skipped.length ? `, ${skipped.length} NOT VERIFIED` : ""),
+);
 if (problems > 0) process.exitCode = 1;
+if (skipped.length > 0 && REQUIRED) {
+	console.error(
+		`\nPI_REQUIRE_CONSUMERS=1 and ${skipped.length} consumer checkout(s) are absent, so this run ` +
+			"verified no copies at all. Every check above was skipped, and a green run here means nothing.",
+	);
+	process.exitCode = 1;
+}
