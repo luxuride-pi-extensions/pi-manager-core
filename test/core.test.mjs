@@ -13,7 +13,7 @@
  * protects, which reads better in plain output than under a runner's reporter.
  */
 
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,6 +23,10 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const jiti = createJiti(import.meta.url);
 
 const core = await jiti.import(join(REPO, "shared", "core.js"));
+
+// index.ts is loaded through jiti too, because its `./shared/core.js`
+// specifier is NodeNext and `--strip-types` cannot resolve it.
+const extensionEntry = await jiti.import(join(REPO, "index.ts"));
 
 let passed = 0;
 const failures = [];
@@ -508,6 +512,89 @@ check(
 );
 check("the child-session regex returns null for a manager", core.readActiveAgentName("You are the manager.") === null);
 check("the child-session regex tolerates a null prompt", core.readActiveAgentName(null) === null);
+
+/* ------------------------------------------------- install dirs and health -- */
+
+// The three consumer install-dir names, and the extension entry's own health
+// check, which reads them out of a pi agent dir.
+//
+// CONSUMER_EXTENSION_DIRS is asserted against the REAL extensions dir, because
+// the one thing no compiler and no diff can catch here is a wrong name: a typo
+// makes a perfectly good install read as missing, and makes
+// composeManagerPrompt's side lookup degrade both halves of a manager prompt
+// while reporting nothing about the lookup itself.
+const agentDir = core.getPiAgentDir();
+for (const name of extensionEntry.CONSUMER_EXTENSION_DIRS) {
+	check(
+		`the install name ${name} exists under ${join(agentDir, "extensions")}`,
+		existsSync(join(agentDir, "extensions", name)),
+		"pi installs the binder as unity-blender while its package is pi-unity-blender; if this fails, that difference has been changed",
+	);
+}
+// And the reverse trap, stated as an assertion so "fixing" it fails here.
+check(
+	"the binder's install name is unity-blender, not its package name pi-unity-blender",
+	extensionEntry.CONSUMER_EXTENSION_DIRS.includes("unity-blender") &&
+		!extensionEntry.CONSUMER_EXTENSION_DIRS.includes("pi-unity-blender"),
+);
+
+// getCoreHealth must look where pi actually keeps extensions. It used to build
+// join(process.env.HOME, ".pi", "agent") itself, which reported a perfectly
+// healthy install as missing under PI_AGENT_DIR, and -- with HOME unset --
+// resolved the RELATIVE path ".pi/agent" against process.cwd().
+const fakeAgentDir = mkdtempSync(join(tmpdir(), "manager-core-agentdir-"));
+for (const name of extensionEntry.CONSUMER_EXTENSION_DIRS) {
+	mkdirSync(join(fakeAgentDir, "extensions", name), { recursive: true });
+}
+const savedAgentDir = process.env.PI_AGENT_DIR;
+process.env.PI_AGENT_DIR = fakeAgentDir;
+try {
+	const healthy = extensionEntry.getCoreHealth(core.getPiAgentDir());
+	check("a pi agent dir with all three consumers installed is resolved", healthy.resolved === true, healthy.problems.join("; "));
+	check("every consumer is reported installed", healthy.consumers.every((c) => c.installed));
+
+	// The unhealthy half is asked with a path, not with the environment: this
+	// machine has all three installed, so a check that leaned on the real
+	// ~/.pi/agent would pass for the wrong reason.
+	const emptyDir = mkdtempSync(join(tmpdir(), "manager-core-empty-"));
+	const unhealthy = extensionEntry.getCoreHealth(emptyDir);
+	check("a pi agent dir with none of them is NOT resolved", unhealthy.resolved === false);
+	check(
+		"each missing consumer is named in the problems",
+		extensionEntry.CONSUMER_EXTENSION_DIRS.every((n) => unhealthy.problems.some((p) => p.startsWith(n))),
+		unhealthy.problems.join("; "),
+	);
+	// getPiAgentDir is what D fixed: it has to follow PI_AGENT_DIR rather than
+	// $HOME, which is the only reason the check above can be given a relocated
+	// home at all.
+	check("getPiAgentDir follows PI_AGENT_DIR", core.getPiAgentDir() === fakeAgentDir, core.getPiAgentDir());
+} finally {
+	if (savedAgentDir === undefined) delete process.env.PI_AGENT_DIR;
+	else process.env.PI_AGENT_DIR = savedAgentDir;
+}
+
+// The warning is driven by the same agent dir, so this is the end-to-end shape:
+// a relocated pi home produced a false "the shared behaviour has forked again"
+// notification before, and none now.
+const notified = [];
+const fakePi = {
+	on(event, handler) {
+		fakePi.startSession = handler;
+	},
+};
+extensionEntry.default(fakePi);
+process.env.PI_AGENT_DIR = fakeAgentDir;
+try {
+	fakePi.startSession({}, { ui: { notify: (m) => notified.push(m) } });
+	check("session_start stays silent when the relocated pi home has every consumer", notified.length === 0, notified.join("; "));
+	process.env.PI_AGENT_DIR = mkdtempSync(join(tmpdir(), "manager-core-empty-"));
+	fakePi.startSession({}, { ui: { notify: (m) => notified.push(m) } });
+	check("session_start warns when a consumer really is missing", notified.length === 1, notified.join("; "));
+	check("the warning names the missing consumer", /unity-blender is not installed/.test(notified[0] ?? ""), notified[0]);
+} finally {
+	if (savedAgentDir === undefined) delete process.env.PI_AGENT_DIR;
+	else process.env.PI_AGENT_DIR = savedAgentDir;
+}
 
 rmSync(tmp, { recursive: true, force: true });
 

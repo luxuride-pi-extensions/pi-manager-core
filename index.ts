@@ -37,7 +37,7 @@ import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { composeManagerPrompt, createManagerMode, isDegradedPrompt, readPromptFile } from "./shared/core.js";
+import { composeManagerPrompt, createManagerMode, getPiAgentDir, isDegradedPrompt, readPromptFile } from "./shared/core.js";
 
 const EXTENSION_DIR = resolve(dirname(fileURLToPath(import.meta.url)));
 
@@ -68,7 +68,31 @@ export interface CoreHealth {
 	problems: string[];
 }
 
-const CONSUMERS = ["pi-blender", "pi-unity", "unity-blender"];
+/**
+ * The directory names pi installs the three consumers under, in the order they
+ * are reported.
+ *
+ * READ THIS BEFORE "FIXING" unity-blender to pi-unity-blender.
+ *
+ * The binder's package.json says `"name": "pi-unity-blender"`, and pi installs
+ * it as `unity-blender`. Both names are real and they are not the same string,
+ * because the install name comes from the directory pi is given rather than
+ * from the package's own `name`. Confirmed on disk: `<agent-dir>/extensions`
+ * holds `pi-blender`, `pi-unity` and `unity-blender`. So the two names here are
+ * deliberate and "correcting" the third to match its package name breaks the
+ * install check AND composeManagerPrompt's side lookup in the same stroke --
+ * which is why they are declared once, exported, and asserted against the real
+ * extensions dir in test/core.test.mjs rather than left as literals twice.
+ *
+ * The SAME two names are needed by `shared/prompts.js`
+ * `composeManagerPrompt({sides})`, where `side.extension` is this install name.
+ * A consumer passes them explicitly there today, because importing this
+ * extension's entry point from the shared core would invert the dependency:
+ * the core is resolved BY consumers, so it cannot require one back. That is the
+ * one place the list is still written twice, and the test above is what keeps
+ * the two copies from drifting.
+ */
+export const CONSUMER_EXTENSION_DIRS: readonly string[] = ["pi-blender", "pi-unity", "unity-blender"];
 
 /** Report whether the core is usable and who is using it. Read-only. */
 export function getCoreHealth(piAgentDir: string): CoreHealth {
@@ -76,7 +100,7 @@ export function getCoreHealth(piAgentDir: string): CoreHealth {
 	const problems: string[] = [];
 	if (!existsSync(path)) problems.push(`the core module is missing at ${path}`);
 
-	const consumers = CONSUMERS.map((name) => {
+	const consumers = CONSUMER_EXTENSION_DIRS.map((name) => {
 		const installed = existsSync(join(piAgentDir, "extensions", name));
 		if (!installed) problems.push(`${name} is not installed, so nothing consumes this core`);
 		return { name, installed };
@@ -89,7 +113,21 @@ export default function managerCore(pi: {
 	on(event: string, handler: (event: unknown, ctx: { ui?: { notify?(message: string, level?: string): void } }) => void): void;
 }): void {
 	pi.on("session_start", (_event, ctx) => {
-		const health = getCoreHealth(join(process.env.HOME ?? "", ".pi", "agent"));
+		// getPiAgentDir(), not a hardcoded join(HOME, ".pi", "agent"). Two bugs,
+		// both of which produced a FALSE "the shared behaviour has forked again":
+		//
+		//  1. It ignored PI_AGENT_DIR, which is exactly the non-default pi home
+		//     this core already has a function to absorb (shared/paths.js) and
+		//     which this repo's own harnesses set. A sandboxed or relocated pi
+		//     home looks like a missing install, and the warning tells the user
+		//     their core has drifted when nothing has.
+		//  2. With HOME unset, join("", ".pi", "agent") is the RELATIVE path
+		//     ".pi/agent", which existsSync resolves against process.cwd() --
+		//     so the check read an unrelated directory of whatever the session
+		//     happened to be started in.
+		//
+		// The names themselves are also not literals here: see CONSUMERS.
+		const health = getCoreHealth(getPiAgentDir());
 		if (health.resolved) return;
 		// One notification, naming the problem, rather than three consumers each
 		// failing to import and each reporting it.
