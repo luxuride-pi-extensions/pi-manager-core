@@ -9,6 +9,25 @@
  * installed symlink, and a production session alike, with no build step and no
  * second jiti instance.
  *
+ * What that costs, and where it is paid. `checkJs` is false in tsconfig.json, and
+ * `include` there names only `index.ts` and the shared declaration files -- so the
+ * `.js` bodies are not in the TypeScript program at all. Flipping the flag alone
+ * therefore changes nothing: verified by adding an undefined identifier to
+ * shared/paths.js and watching `tsc --noEmit` still exit 0. Adding
+ * `shared/...js` to `include` does put them in, and surfaces 59 errors, every
+ * one of them "implicitly has an any type" on a parameter or a destructured
+ * options object. Making that clean means annotating the whole core in JSDoc with
+ * types the `.d.ts` beside each file already states -- the annotation-free design
+ * this header describes, paid back in full, for a check no consumer runs.
+ *
+ * So a `.d.ts` is free to misstate a signature, and nothing cheap can stop it: a
+ * hand-written declaration file for hand-written JavaScript has no compiler
+ * behind it either way. The guard is runtime, in test/core.test.mjs, which
+ * asserts typeof and declared arity for all thirteen exports and
+ * `instanceof RegExp` for the one regex. That catches a wrong parameter count
+ * and a wrong return type; it cannot catch a wrong parameter TYPE, and this is
+ * where that limit is recorded rather than left to be rediscovered.
+ *
  * What lives here is only what all three extensions genuinely do the same way.
  * Application-specific behaviour stays in the application: this package knows
  * about a manager GATE and a `/command`, not about Blender, Unity, or geometry.
