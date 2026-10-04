@@ -47,16 +47,71 @@ jobs:
       - run: npm run typecheck
       - run: npm test
 
-      # The packaging allowlists are a CROSS-REPO fact: each consumer's
-      # `files` list is only correct relative to what pi loads from it, and a
-      # stale entry in any of the four is invisible from inside that repo. So
-      # this is checked here, where all four checkouts exist, rather than
-      # duplicated as a fourth copy of the same list inside each consumer.
+  packaging:
+    name: packaging allowlists
+    runs-on: ubuntu-latest
+    # All three consumers are PRIVATE, so this needs the same PAT the consumer
+    # job uses: GITHUB_TOKEN cannot read a private repository even in the same
+    # org.
+    #
+    # A SEPARATE job, and not a step in `core`, because of where the checkouts
+    # are. The consumers are checked out in the `consumers` job only, so a
+    # `files` check added to `core` finds no siblings and -- being written to
+    # skip rather than fail when a checkout is absent -- reports
+    #
+    #   ok pi-manager-core declares a files allowlist (3 entries)
+    #   skipped pi-blender (not checked out)
+    #   skipped pi-unity (not checked out)
+    #   skipped pi-unity-blender (not checked out)
+    #   1 of 4 package(s) clean, 0 problem(s)
+    #
+    # which is green and has checked one of the four. That is the failure mode
+    # this check exists to prevent, reproduced by the check itself.
+    #
+    # Its own job also means a packaging problem is reported once, as itself,
+    # rather than three times inside three consumer suites.
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      # THIS REPOSITORY FIRST, for the reason spelled out in `core`: a bare
+      # checkout deletes the contents of $GITHUB_WORKSPACE, so it has to
+      # precede every path-ed sibling checkout.
+      - uses: actions/checkout@v5
+        with:
+          repository: luxuride-pi-extensions/pi-blender
+          path: projects/pi-blender
+          ref: master
+          token: ${{ secrets.CONSUMER_TOKEN }}
+
+      - uses: actions/checkout@v5
+        with:
+          repository: luxuride-pi-extensions/pi-unity
+          path: projects/pi-unity
+          ref: master
+          token: ${{ secrets.CONSUMER_TOKEN }}
+
+      - uses: actions/checkout@v5
+        with:
+          repository: luxuride-pi-extensions/pi-unity-blender
+          path: projects/pi-unity-blender
+          ref: master
+          token: ${{ secrets.CONSUMER_TOKEN }}
+
+      # No `npm ci` here. The check reads package.json and shells out to
+      # `npm pack --dry-run`, which packs from the working tree and needs no
+      # dependencies -- and deliberately no installs, because an install would
+      # hide the thing being checked: a package whose allowlist omits a
+      # directory is exactly a package whose freshly-installed state looks fine.
       #
-      # Runs after the checkouts below so all four repos are present, and it
-      # covers the core's own package.json too (PACKAGES includes
-      # pi-manager-core), so there is exactly one place that asserts this.
-      - name: packaging allowlists (cross-repo)
+      # ref: master on the consumers, for the asymmetry reason in `consumers`:
+      # the answer being tested is "do the allowlists describe the packages as
+      # they are today", which is the question a single repo cannot ask about
+      # itself.
+      - name: what each package would publish
         run: node test/package-contents.mjs
 
   consumers:
