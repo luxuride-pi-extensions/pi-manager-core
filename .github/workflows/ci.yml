@@ -1,0 +1,96 @@
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  schedule:
+    # Weekly, against the default branch only. The point of this repo is
+    # catching DRIFT between the canonical files here and the copies in the
+    # consumer repos; drift has no PR to hang off, because whoever changes the
+    # core is not the person who opens a PR in the consumer. A schedule turns
+    # that from a silent divergence into a red check.
+    - cron: "23 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  core:
+    name: unit tests and typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  consumers:
+    name: consumer suites (${{ matrix.repo }})
+    # All three consumers are PRIVATE, so this job needs a PAT with read
+    # access to the org: GITHUB_TOKEN cannot read a private repository even in
+    # the same org.
+    #
+    # Gated on a repository VARIABLE rather than `secrets`: `secrets` is not in
+    # scope for a job-level `if` (only github/needs/vars/inputs are), and
+    # `if: ${{ secrets.CONSUMER_TOKEN != '' }}` fails the WHOLE workflow file --
+    # zero jobs, which is what the first run of this workflow reported. A
+    # variable also expresses the real condition -- "this repo can read its
+    # siblings" -- which is a property of the configuration, not of whether a
+    # particular PAT happens to be populated today.
+    if: ${{ vars.CONSUMER_REPOS_ENABLED == '1' }}
+    needs: core
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        repo: [pi-blender, pi-unity-blender, pi-unity]
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          repository: luxuride-pi-extensions/pi-manager-core
+          path: projects/pi-manager-core
+          ref: ${{ github.ref_name == 'master' && github.sha || github.event.pull_request.head.sha }}
+          # github.token cannot read a PRIVATE repository. This is the one
+          # credential the job needs, and the reason the job is separate from
+          # `core` above: this one cannot run on a forked PR, where a token
+          # from the fork is what GITHUB_TOKEN would be.
+          token: ${{ secrets.CONSUMER_TOKEN }}
+
+      - uses: actions/checkout@v5
+        with:
+          repository: luxuride-pi-extensions/${{ matrix.repo }}
+          path: projects/${{ matrix.repo }}
+          # The consumer is pinned to its OWN default branch, while the core
+          # above is checked out at this branch. That asymmetry is the point:
+          # the job answers "does the changed core still match the consumers as
+          # they are today", which is the question a consumer's own CI cannot
+          # ask -- it has no copy of the core's new state.
+          #
+          # It cannot be github.sha: on a pull_request that is the merge commit
+          # of THIS repo, which does not exist in the consumer's history.
+          ref: master
+          token: ${{ secrets.CONSUMER_TOKEN }}
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: projects/pi-manager-core/package-lock.json
+
+      # Installed before the consumers because the core's jiti resolution walks
+      # up the tree, and this keeps that from depending on npm's ordering
+      # across siblings.
+      - name: install the core
+        working-directory: projects/pi-manager-core
+        run: npm ci
+
+      - name: install and test the consumer
+        run: projects/pi-manager-core/test/consumers.sh ${{ matrix.repo }}

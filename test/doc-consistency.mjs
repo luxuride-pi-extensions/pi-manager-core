@@ -36,9 +36,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "..");
 const PROJECTS = resolve(REPO, "..");
 
-const { createJiti } = await import(
-	"/home/lux/.pi/agent/install/releases/0.87.1/node_modules/jiti/lib/jiti.mjs"
-);
+import { createJiti } from "./jiti.mjs";
 const jiti = createJiti(import.meta.url, { isolated: true, interopDefault: true });
 
 /** Which names are pi tools, and so must resolve to something registered. */

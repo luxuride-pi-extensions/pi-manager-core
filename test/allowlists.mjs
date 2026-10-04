@@ -17,12 +17,27 @@
  */
 
 import { join } from "node:path";
-import { readFileSync } from "node:fs";
-import { createJiti } from "/home/lux/.pi/agent/install/releases/0.87.1/node_modules/jiti/lib/jiti.mjs";
+import { existsSync, readFileSync } from "node:fs";
+import { createJiti } from "./jiti.mjs";
 
 const jiti = createJiti(import.meta.url, { isolated: true, interopDefault: true });
 const REPO_ROOT = join(import.meta.dirname, "..");
 const MANAGER_PROMPT = "You are the manager.";
+
+// Whether an absent consumer checkout is a failure or a skip. The checks below
+// read a sibling repository's manager prompt and load its index.ts, so they are
+// cross-repository by construction and cannot run at all in a clone of this
+// repository alone.
+//
+// It is a failure only where the siblings were deliberately checked out: the
+// `consumers` job in .github/workflows/ci.yml checks out all three and sets
+// PI_REQUIRE_CONSUMERS=1, so there is no way for one to be missing silently and
+// the job reports "39 passed, 0 failed" either way. In this repository's own
+// `core` job -- which checks out only this repository -- an absent checkout is
+// reported as a skip instead, because a red check for "you cloned one repo when
+// this suite needs four" trains everyone to ignore the check that is supposed
+// to catch a tool quietly leaving a manager's allowlist.
+const REQUIRED = process.env.PI_REQUIRE_CONSUMERS === "1";
 
 const EXTENSIONS = [
 	{
@@ -90,6 +105,7 @@ async function engagedGate(dir) {
 
 let pass = 0;
 const failures = [];
+const skipped = [];
 function check(label, ok, detail) {
 	if (ok) pass++;
 	else failures.push(`${label}${detail ? `\n    ${detail}` : ""}`);
@@ -97,6 +113,12 @@ function check(label, ok, detail) {
 
 for (const ext of EXTENSIONS) {
 	const promptPath = join(REPO_ROOT, "..", ext.dir, ext.prompt);
+	if (!existsSync(promptPath)) {
+		const note = `${ext.dir}: checkout not present at ${join(REPO_ROOT, "..", ext.dir)}`;
+		if (REQUIRED) failures.push(note);
+		else skipped.push(`${ext.dir} (not checked out)`);
+		continue;
+	}
 	let expected;
 	try {
 		expected = promptTools(readFileSync(promptPath, "utf8"));
@@ -160,6 +182,7 @@ for (const ext of EXTENSIONS) {
 	}
 }
 
-console.log(`${pass} passed, ${failures.length} failed`);
+console.log(`${pass} passed, ${failures.length} failed${skipped.length ? `, ${skipped.length} skipped` : ""}`);
+for (const note of skipped) console.log(`ok ${note}`);
 for (const failure of failures) console.log(`FAIL ${failure}`);
 process.exit(failures.length ? 1 : 0);

@@ -18,7 +18,7 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { createJiti } from "/home/lux/.pi/agent/install/releases/0.87.1/node_modules/jiti/lib/jiti.mjs";
+import { createJiti } from "./jiti.mjs";
 
 const jiti = createJiti(import.meta.url, { isolated: true, interopDefault: true });
 const REPO_ROOT = join(import.meta.dirname, "..");
@@ -29,8 +29,24 @@ const MODULES = {
 	"pi-unity-blender": "index.ts",
 };
 
+/**
+ * Whether a missing consumer checkout is an error.
+ *
+ * It depends on who is running, so it is an input rather than a constant.
+ * resolver-copies and dependency-declaration both skip an absent checkout, and
+ * this one used to fail instead — which meant `npm test` passed in a working
+ * directory that happens to have all four repos and failed on a runner with
+ * one. The skip is right for a local `npm test` and wrong for a job that
+ * checked the consumers out on purpose, so PI_REQUIRE_CONSUMERS=1 turns the
+ * absence into the error it really is there. The consumers matrix job in
+ * ci.yml sets it, which is what makes that job's coverage real rather than
+ * accidental.
+ */
+const REQUIRED = process.env.PI_REQUIRE_CONSUMERS === "1";
+
 let pass = 0;
 const failures = [];
+const skipped = [];
 function check(label, condition, detail) {
 	if (condition) {
 		pass++;
@@ -93,7 +109,9 @@ const MANAGER_PROMPT = "You are the manager.";
 for (const [name, entry] of Object.entries(MODULES)) {
 	const dir = join(REPO_ROOT, "..", name);
 	if (!existsSync(dir)) {
-		failures.push(`${name}: checkout not present at ${dir}`);
+		const note = `${name}: checkout not present at ${dir}`;
+		if (REQUIRED) failures.push(note);
+		else skipped.push(`${name} (not checked out)`);
 		continue;
 	}
 
@@ -171,6 +189,9 @@ for (const [name, entry] of Object.entries(MODULES)) {
 	);
 }
 
-console.log(`${pass} passed, ${failures.length} failed`);
+// The skip is reported, never silent: a run that checked nothing out has to be
+// distinguishable from a run that checked everything out and found it correct.
+console.log(`${pass} passed, ${failures.length} failed${skipped.length ? `, ${skipped.length} skipped` : ""}`);
+for (const note of skipped) console.log(`ok ${note}`);
 for (const failure of failures) console.log(`FAIL ${failure}`);
 process.exit(failures.length ? 1 : 0);
