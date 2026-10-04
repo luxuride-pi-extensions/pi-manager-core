@@ -44,12 +44,21 @@ export function registerEngageCommand(pi, { name, description, usage, engagedMes
 
 /**
  * Register the matching exit command: lift the gate, keep everything else.
+ *
+ * `onExit` DEFAULTS TO `() => false`, not to success. With no `onExit` there is
+ * no gate to lift, so the honest report is "there was nothing to exit" -- and
+ * reporting a successful exit for a session that was never engaged is a
+ * notification the model then goes on to act on, believing it has left a role
+ * it was never in. The default is the refusing one because every consumer
+ * passes a real `onExit` (a `clearGate()` returning whether it had anything to
+ * clear), so the default only fires on a caller bug -- and a bug should read as a
+ * refusal the caller notices, not as a success nobody does.
  */
-export function registerExitCommand(pi, { name, description, notEngagedMessage, exitedMessage, onExit }) {
+export function registerExitCommand(pi, { name, description, notEngagedMessage, exitedMessage, onExit = () => false }) {
 	pi.registerCommand(name, {
 		description: description ?? `Leave manager mode — lift the write/edit/image gate`,
 		async handler(_args, ctx) {
-			const cleared = onExit ? onExit() : true;
+			const cleared = typeof onExit === "function" ? onExit() : false;
 			if (!cleared) {
 				ctx.ui.notify(notEngagedMessage ?? "Not in manager mode — nothing to exit.", "info");
 				return;

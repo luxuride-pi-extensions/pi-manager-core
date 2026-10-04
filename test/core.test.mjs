@@ -672,6 +672,134 @@ check(
 check("the child-session regex returns null for a manager", core.readActiveAgentName("You are the manager.") === null);
 check("the child-session regex tolerates a null prompt", core.readActiveAgentName(null) === null);
 
+/* -------------------------------------------------------------- commands -- */
+
+/**
+ * A pi stand-in for the two commands: records what was registered, what was
+ * sent, and what the user was told.
+ *
+ * The commands module had NO test at all, which is the finding rather than an
+ * aside: this package exists so that three extensions cannot drift on the
+ * command's argument handling and delivery decision, and both of those were
+ * untested in the place where they are shared.
+ */
+function makeCommandPi() {
+	const commands = new Map();
+	const sent = [];
+	const notices = [];
+	return {
+		commands,
+		sent,
+		notices,
+		registerCommand: (name, command) => commands.set(name, command),
+		sendUserMessage: (message, options) => sent.push({ message, options }),
+	};
+}
+
+/** A ctx in one of the two states `deliverAs` depends on, telling `pi` what it said. */
+function commandCtx(pi, idle) {
+	return { ui: { notify: (message) => pi.notices.push(message) }, isIdle: () => idle };
+}
+
+{
+	const exitPi = makeCommandPi();
+	core.registerExitCommand(exitPi, {
+		name: "blender-exit",
+		onExit: () => {
+			exitPi.notices.push("cleared");
+			return true;
+		},
+	});
+	const exit = exitPi.commands.get("blender-exit");
+	check("the exit command is registered under its own name", typeof exit?.handler === "function");
+	check("the exit command has a description", typeof exit.description === "string" && exit.description.length > 0);
+	await exit.handler("", commandCtx(exitPi, true));
+	check("a successful exit reports that it left", exitPi.notices.at(-1)?.includes("Left manager mode") === true, exitPi.notices.join(" | "));
+	check("a successful exit called the gate's clear exactly once", exitPi.notices.filter((n) => n === "cleared").length === 1);
+
+	// onExit returning false is the "was never engaged" case, and it must NOT be
+	// reported as a success: the model reads this notice and acts on it.
+	const refusedPi = makeCommandPi();
+	core.registerExitCommand(refusedPi, { name: "unity-exit", onExit: () => false });
+	await refusedPi.commands.get("unity-exit").handler("", commandCtx(refusedPi, true));
+	check("an exit with nothing to clear says so", refusedPi.notices.at(-1)?.includes("Not in manager mode") === true, refusedPi.notices.join(" | "));
+	check("an exit with nothing to clear does not claim success", !/Left manager mode/.test(refusedPi.notices.join(" | ")));
+
+	// The default. Previously `onExit ? onExit() : true`, so a command registered
+	// with no onExit reported a successful exit on a session that was never
+	// engaged -- and every notification is something the model reads and believes.
+	const defaultPi = makeCommandPi();
+	core.registerExitCommand(defaultPi, { name: "unity-blender-exit" });
+	await defaultPi.commands.get("unity-blender-exit").handler("", commandCtx(defaultPi, true));
+	check("an exit command with no onExit refuses rather than claiming success", defaultPi.notices.at(-1)?.includes("Not in manager mode") === true, defaultPi.notices.join(" | "));
+
+	// A non-function onExit is the same bug arriving by another route.
+	const junkPi = makeCommandPi();
+	core.registerExitCommand(junkPi, { name: "junk-exit", onExit: "yes" });
+	await junkPi.commands.get("junk-exit").handler("", commandCtx(junkPi, true));
+	check("a non-function onExit is treated as no gate, not as success", junkPi.notices.at(-1)?.includes("Not in manager mode") === true, junkPi.notices.join(" | "));
+
+	// Custom messages pass through, so an application can name its own side.
+	const customPi = makeCommandPi();
+	core.registerExitCommand(customPi, {
+		name: "custom-exit",
+		notEngagedMessage: "You are not the Blender manager.",
+		exitedMessage: "Blender gate lifted.",
+		onExit: () => true,
+	});
+	await customPi.commands.get("custom-exit").handler("", commandCtx(customPi, true));
+	check("a custom exit message is used", customPi.notices.at(-1) === "Blender gate lifted.");
+
+	// The engage command. The task is SENT, never executed: a command that ran
+	// the build itself would put the manager's first turn outside the gate the
+	// manager prompt describes.
+	const engagePi = makeCommandPi();
+	let engaged = 0;
+	core.registerEngageCommand(engagePi, {
+		name: "blender",
+		usage: "<what to build>",
+		onEngage: () => {
+			engaged += 1;
+		},
+	});
+	const engage = engagePi.commands.get("blender");
+	check("the engage command is registered", typeof engage?.handler === "function");
+	await engage.handler("   ", commandCtx(engagePi, true));
+	check("a bare engage is a usage notice, not a task", /Usage: \/blender <what to build>/.test(engagePi.notices.at(-1) ?? ""), engagePi.notices.join(" | "));
+	check("a bare engage does not engage", engaged === 0);
+	check("a bare engage sends nothing", engagePi.sent.length === 0);
+
+	await engage.handler("  make a chair  ", commandCtx(engagePi, true));
+	check("the task is trimmed", engagePi.sent.at(-1)?.message === "make a chair");
+	check("an idle session gets an ordinary message", engagePi.sent.at(-1)?.options?.deliverAs === undefined);
+	check("engaging runs the hook once", engaged === 1);
+	check("engaging reports that this session is the manager", /Engaged/.test(engagePi.notices.at(-1) ?? ""));
+
+	// A steer interrupts the current turn. Sending one to an IDLE session can
+	// interleave it ahead of work already queued, so the two states must differ.
+	await engage.handler("second task", commandCtx(engagePi, false));
+	check("a busy session gets a steer", engagePi.sent.at(-1)?.options?.deliverAs === "steer");
+
+	// A fallbackTask makes a bare call meaningful (the binder opens by asking
+	// for status), and must not be empty-string-coerced into a dropped message.
+	const fallbackPi = makeCommandPi();
+	core.registerEngageCommand(fallbackPi, { name: "unity-blender", fallbackTask: "Show me the status of both bridges." });
+	await fallbackPi.commands.get("unity-blender").handler("", commandCtx(fallbackPi, true));
+	check("a bare engage with a fallbackTask runs the fallback", fallbackPi.sent.at(-1)?.message === "Show me the status of both bridges.");
+
+	// getArgumentCompletions is FORWARDED, never wrapped: pi's hook takes the raw
+	// prefix and returns null to mean "no suggestions", so a wrapper turning null
+	// into [] would render an empty menu where pi renders none.
+	const completionsPi = makeCommandPi();
+	const completions = (prefix) => (prefix === "" ? null : ["unity-worker"]);
+	core.registerEngageCommand(completionsPi, { name: "completions", getArgumentCompletions: completions });
+	check("getArgumentCompletions is the function it was given", completionsPi.commands.get("completions").getArgumentCompletions === completions);
+	check("the forwarded hook still returns null for no suggestions", completionsPi.commands.get("completions").getArgumentCompletions("") === null);
+	const plainPi = makeCommandPi();
+	core.registerEngageCommand(plainPi, { name: "plain" });
+	check("no completions hook means the key is absent, not an empty function", !("getArgumentCompletions" in plainPi.commands.get("plain")));
+}
+
 /* ------------------------------------------------- install dirs and health -- */
 
 // The three consumer install-dir names, and the extension entry's own health
