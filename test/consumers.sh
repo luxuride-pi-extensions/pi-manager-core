@@ -93,6 +93,30 @@ link pi-blender pi-blender
 link pi-unity pi-unity
 link pi-unity-blender unity-blender
 
+# A LINK is not an INSTALL. The suites load the siblings' index.ts through jiti
+# (pi-unity's engagement-test.mjs:77 does exactly that for both pi-unity and
+# the binder), and jiti resolves each module's imports against the module's OWN
+# node_modules -- not against the consumer's. Both pi-unity/index.ts and
+# pi-unity-blender/index.ts import typebox, so a linked sibling with no
+# node_modules fails at import:
+#
+#   Error: Cannot find module 'typebox'
+#
+# which is reported against the whole file, so every later sub-suite in the
+# chain never runs and `npm test` stops there with a green-looking prefix of
+# passes. Installing the siblings is what makes the link honest.
+#
+# Only the ones the suite will actually load, and --no-audit/--no-fund because
+# this is three more full installs per matrix job and the registry chatter is
+# the slowest part of them.
+echo "==> $name: install the siblings it loads"
+for sibling in pi-blender pi-unity pi-unity-blender; do
+	[ "$sibling" = "$name" ] && continue
+	[ -d "$PROJECTS/$sibling/node_modules" ] && continue
+	echo "    installing $sibling"
+	(cd "$PROJECTS/$sibling" && npm ci --legacy-peer-deps --no-audit --no-fund >/dev/null)
+done
+
 # This job checked the consumers out on purpose, so their absence is an error
 # rather than a reason to skip: extension-registration.mjs skips an absent
 # checkout by default, and without this the job would pass having verified
