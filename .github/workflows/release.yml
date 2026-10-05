@@ -58,6 +58,33 @@ jobs:
         with:
           node-version: 22
 
+      # pi-unity-blender's three binder scripts ARE that package's product --
+      # they are what moves meshes between a live Blender and a live Unity --
+      # and they are Python files named in `files`. Nothing in CI can execute
+      # them: test/binder-scripts.test.mjs needs a real Blender build that
+      # ubuntu-latest does not have, and skips without one, which is the same
+      # "green with nothing verified" shape this suite is being fixed for. The
+      # release lane already packs the tarball, so it is the last place that
+      # can be sure the shipped Python compiles under the Python it ships for.
+      #
+      # Keyed on the directory existing rather than the package name, so this
+      # one file stays byte-identical in all four repos: the three that ship no
+      # Python skip the loop and report zero, which is a fact, not a failure.
+      - name: the shipped Python compiles
+        if: ${{ hashFiles('binder/scripts/*.py') != '' }}
+        run: |
+          set -euo pipefail
+          count=0
+          for py in binder/scripts/*.py; do
+            python3 -m py_compile "$py"
+            count=$((count + 1))
+          done
+          if [ "$count" -eq 0 ]; then
+            echo "binder/scripts/*.py is non-empty per hashFiles but no file compiled" >&2
+            exit 1
+          fi
+          echo "ok $count shipped Python script(s) compile under $(python3 -V)"
+
       - name: resolve the tag
         id: tag
         run: |
@@ -117,6 +144,25 @@ jobs:
       # nothing about any other repo in the suite. Keep it that way -- nothing
       # here may name a sibling repository or a directory that only one of the
       # four has, because this file is byte-identical in all four by design.
+      #
+      # "Byte-identical in all four" is the load-bearing constraint and it has
+      # now cost real work twice, so it is worth saying why it exists rather
+      # than only what it forbids. A release gate that existed in one repo and
+      # not the others would protect the package it was written for and leave
+      # the other three shipping whatever they shipped before. So the rule is
+      # not "keep the file tidy" -- it is "the gate must be the same gate
+      # everywhere, or it is not a suite-wide gate".
+      #
+      # The corollary is that a repo-specific check keys on something that
+      # EXISTS rather than on the package name: the Python block below is
+      # written so that three repos skip it and one runs it, and a block keyed
+      # on `pkg.name == "pi-unity-blender"` would be correct today and wrong
+      # the day a fifth repo ships Python.
+      #
+      # There is still no sync check keeping the four copies equal. That is a
+      # known gap, not a settled design: pi-manager-core/test/resolver-copies.mjs
+      # enforces byte-identity for manager-core.ts and
+      # scripts/agent-template-checks.mjs, and no equivalent covers this file.
       #
       # Zero git tags exist in any of the four repos as of this commit, so the
       # `tag == v<package.json version>` check below has never been satisfied
@@ -250,6 +296,50 @@ jobs:
               if (rel && !fs.existsSync(rel)) {
                 missing.push(
                   `files entry ${rel} does not exist in this repository`
+                );
+              }
+            }
+
+            // The directories pi actually LOADS at runtime, not just the
+            // extension entries. An entry-only check is what let a `files`
+            // list naming index.ts and nothing else pass: the extension
+            // installs, its manager prompt loads, and every tool it registers
+            // fails to import a module that was never shipped. The
+            // missing-skills case is worse, because it throws nothing at all.
+            //
+            // Keyed by package name and skipped when the source directory does
+            // not exist, so one block is correct in all four repositories and
+            // stays correct in a fifth. That shape is deliberate: a per-repo
+            // literal list would have to be edited in four places, and the
+            // directory it forgets is the one that costs the most and
+            // complains the least.
+            //
+            // The names below are ALWAYS_SHIP and SKILL_DIRS from
+            // pi-manager-core/test/package-contents.mjs -- the same assertion
+            // on the CI side, where it only runs under PI_REQUIRE_PACKAGES=1,
+            // which is why a release needs its own copy.
+            const ALWAYS_SHIP = ["core/", "scripts/", "agents/"];
+            const SKILL_DIRS = {
+              "pi-blender": ["blender/skills"],
+              "pi-unity": ["unity/skills"],
+              "pi-unity-blender": ["skills"],
+            };
+            const MODULE_DIRS = {
+              "pi-blender": ["blender/"],
+              "pi-unity": ["unity/"],
+              "pi-unity-blender": ["binder/"],
+              "pi-manager-core": ["shared/"],
+            };
+            const runtime = [
+              ...ALWAYS_SHIP,
+              ...(SKILL_DIRS[pkg.name] ?? []),
+              ...(MODULE_DIRS[pkg.name] ?? []),
+            ];
+            for (const d of runtime) {
+              if (!fs.existsSync(d)) continue;
+              if (!paths.some((x) => x.startsWith(d))) {
+                missing.push(
+                  `${d} exists on disk but nothing from it ships, so the extension cannot load it`,
                 );
               }
             }
