@@ -2,7 +2,39 @@ name: ci
 
 on:
   push:
-    branches: [master]
+    # Every branch here is LIVE work in this repo (`git branch -a`, all four
+    # repos agree). They are listed explicitly -- and NOT tidied back to
+    # `[master]` -- because each one is a head that pushes were never checked
+    # against:
+    #
+    #   master              the default branch; the weekly drift schedule below
+    #                       also runs against it.
+    #   feat/packaging      the packaging/allowlist lane; carries the
+    #                       package-contents.mjs and allowlists.mjs work that
+    #                       this repo exists to police in the consumers.
+    #   fix/ci-checkout-order  the sibling-checkout layout lane; its whole
+    #                       subject is where projects/* is checked out, which
+    #                       is only observable by running the workflow.
+    #   ci/github-actions   the checkout@v5 / setup-node@v5 lane.
+    #   fix/review-findings the code-review findings lane; the same argument,
+    #                       and it is the branch fixes are pushed to.
+    #
+    # The rule the list follows: a branch is listed while it is being pushed to,
+    # and removing one means that branch has merged or been deleted -- not that
+    # its CI was inconvenient. A new long-lived branch is added here in the
+    # commit that creates it.
+    #
+    # Before this list, the only push trigger was `master`, so every one of
+    # those heads -- each of them clean and fully pushed -- had never produced
+    # a single CI run, and a green push could not be distinguished from no CI
+    # at all. `pull_request` below covers PR branches, which is why this looked
+    # covered: a branch with no PR open is not covered by anything.
+    branches:
+      - master
+      - feat/packaging
+      - fix/ci-checkout-order
+      - ci/github-actions
+      - fix/review-findings
   pull_request:
   schedule:
     # Weekly, against the default branch only. The point of this repo is
@@ -187,7 +219,14 @@ jobs:
         with:
           repository: luxuride-pi-extensions/pi-manager-core
           path: projects/pi-manager-core
-          ref: ${{ github.ref_name == 'master' && github.sha || github.event.pull_request.head.sha }}
+          # The ref under test: the core checkout must be the thing being
+          # pushed (on master, or on a branch push) or the head of the PR,
+          # NOT the merge commit. Folded across lines because it is 101
+          # columns on one line and a ref that has to be retyped by hand is a
+          # ref that eventually tests the wrong commit in silence.
+          ref: >-
+            ${{ github.ref_name == 'master' && github.sha
+            || github.event.pull_request.head.sha }}
           # github.token cannot read a PRIVATE repository. This is the one
           # credential the job needs, and the reason the job is separate from
           # `core` above: this one cannot run on a forked PR, where a token
