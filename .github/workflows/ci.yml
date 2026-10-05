@@ -82,9 +82,28 @@ jobs:
   packaging:
     name: packaging allowlists
     runs-on: ubuntu-latest
-    # All three consumers are PRIVATE, so this needs the same PAT the consumer
-    # job uses: GITHUB_TOKEN cannot read a private repository even in the same
-    # org.
+    # NOT GATED, and that is the change. This used to carry
+    #
+    #   if: ${{ vars.CONSUMER_REPOS_ENABLED == '1' }}
+    #
+    # on a repository VARIABLE that nobody has ever set. An unset `vars.*`
+    # compares as the empty string, so the condition is false, so the job is
+    # skipped, so -- on a push where nothing else fails -- the workflow is
+    # GREEN having executed nothing that could have failed. That is the
+    # single most dangerous state this suite can be in, because from the run
+    # list it is indistinguishable from a passing build.
+    #
+    # The check does not need the token to be meaningful, so the gate bought
+    # nothing and cost the signal. `npm pack --dry-run` packs from the working
+    # tree and needs no dependencies, and the CORE half of the run --
+    # package-contents.mjs against pi-manager-core itself -- reads package.json
+    # and shells out to npm. Both run fine on a runner with no CONSUMER_TOKEN:
+    # the three sibling checkouts below simply fail, loudly, and only the
+    # checkouts that need a private PAT are gated, per-step.
+    #
+    # The three consumers are PRIVATE, so the sibling checkouts need the same
+    # PAT the consumer job uses: GITHUB_TOKEN cannot read a private repository
+    # even in the same org.
     #
     # A SEPARATE job, and not a step in `core`, because of where the checkouts
     # are. The consumers are checked out in the `consumers` job only, so a
@@ -133,7 +152,47 @@ jobs:
         with:
           node-version: 22
 
+      # Whether the private siblings CAN be fetched is decided ONCE, here, and
+      # published as a step output, because `secrets` is not in scope for a
+      # step-level `if` either -- the available contexts are env, github,
+      # inputs, job, matrix, needs, runner, steps, strategy and vars, so a
+      # bare `if: ${{ secrets.X != '' }}` on a step is rejected by the
+      # workflow validator outright, exactly as the comment on `consumers`
+      # below describes happening at job level. An unset secret arrives as
+      # the empty string, which is what the test below asks.
+      #
+      # This step never fails and never skips: the answer is recorded and
+      # consumed by the check and the guard further down.
+      #
+      # The sibling checkouts are gated on that recorded answer rather than on
+      # the secret directly, because a checkout left SKIPPED lets the job
+      # carry on to the packaging check, which would then verify only
+      # pi-manager-core and report
+      #
+      #   1 of 4 package(s) clean, 0 problem(s)
+      #
+      # as a green job -- which is the exact failure this job's comments say
+      # it exists to prevent. Gating on one recorded answer keeps the two
+      # outcomes cleanly separated: either all three siblings are fetched and
+      # all four packages are checked, or none are and the run is red at the
+      # guard below.
+      - name: can this runner read the private consumer repos?
+        id: wired
+        env:
+          CONSUMER_TOKEN: ${{ secrets.CONSUMER_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -n "${CONSUMER_TOKEN:-}" ]; then
+            echo "wired=true" >> "$GITHUB_OUTPUT"
+            echo "CONSUMER_TOKEN is set; checking out all three consumers."
+          else
+            echo "wired=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::CONSUMER_TOKEN is not set; the three consumer" \
+                 "checkouts and the packaging check will not run."
+          fi
+
       - uses: actions/checkout@v5
+        if: steps.wired.outputs.wired == 'true'
         with:
           repository: luxuride-pi-extensions/pi-blender
           path: projects/pi-blender
@@ -141,6 +200,7 @@ jobs:
           token: ${{ secrets.CONSUMER_TOKEN }}
 
       - uses: actions/checkout@v5
+        if: steps.wired.outputs.wired == 'true'
         with:
           repository: luxuride-pi-extensions/pi-unity
           path: projects/pi-unity
@@ -148,6 +208,7 @@ jobs:
           token: ${{ secrets.CONSUMER_TOKEN }}
 
       - uses: actions/checkout@v5
+        if: steps.wired.outputs.wired == 'true'
         with:
           repository: luxuride-pi-extensions/pi-unity-blender
           path: projects/pi-unity-blender
@@ -172,11 +233,63 @@ jobs:
       # problem(s)" twice while verifying one package, once from the wrong
       # working directory and once from the wrong checkout layout. With all four
       # expected, an absent one is now a failure.
+      #
+      # Skipped, rather than run-and-failed, when the runner is unwired: with
+      # no token the three siblings are absent, and running the check with
+      # PI_REQUIRE_PACKAGES=1 against one of four packages produces a
+      # failure whose message is about the checkout layout rather than about
+      # packaging. The guard below is
+      # where the unwired case is reported, and it reports it as RED.
+      #
+      # Not `continue-on-error`: on a wired runner this is the whole job, and
+      # swallowing a packaging failure would reintroduce exactly the quiet
+      # pass this job was ungated to remove. On an unwired runner it never
+      # runs, so there is nothing to swallow.
       - name: what each package would publish
+        id: packaging_check
+        if: steps.wired.outputs.wired == 'true'
         run: node test/package-contents.mjs
         working-directory: projects/pi-manager-core
         env:
           PI_REQUIRE_PACKAGES: "1"
+
+      # The always-on half of the ungating, and the reason this job cannot
+      # report green without having verified all four packages. `if: always()`
+      # so it runs whichever of the two paths above was taken.
+      #
+      #   * CONSUMER_TOKEN set -> the four sibling checkouts ran, the check
+      #     above is a real result, and its `outcome` must be success. The
+      #     outcome is checked rather than the conclusion because a
+      #     continue-on-error failure is a failure, not a pass.
+      #
+      #   * CONSUMER_TOKEN unset -> nothing was verified, so this exits
+      #     non-zero and names the missing setup.
+      #
+      # There is no third state in which this job is green and has not checked
+      # all four packages. That is the property the old `vars.*` gate lost:
+      # an unset variable used to make this job SKIPPED, which read as a pass.
+      - name: all four packages were verified, or this job is red
+        if: always()
+        env:
+          WIRED: ${{ steps.wired.outputs.wired }}
+          CHECK_OUTCOME: ${{ steps.packaging_check.outcome }}
+        run: |
+          set -euo pipefail
+          if [ "$WIRED" != "true" ]; then
+            echo "::error::CONSUMER_TOKEN is not set, so the three consumer" \
+                 "checkouts were skipped and no package was verified."
+            echo "CONSUMER_TOKEN is a PAT with read access to the" \
+                 "luxuride-pi-extensions org; GITHUB_TOKEN cannot read a" \
+                 "private sibling repo. This job is red on purpose: it must" \
+                 "never read as passed having checked one of four packages."
+            exit 1
+          fi
+          if [ "$CHECK_OUTCOME" != "success" ]; then
+            echo "::error::the packaging check did not pass" \
+                 "(outcome: $CHECK_OUTCOME); see the step above."
+            exit 1
+          fi
+          echo "ok all four packages verified"
 
   consumers:
     name: consumer suites (${{ matrix.repo }})
@@ -184,14 +297,30 @@ jobs:
     # access to the org: GITHUB_TOKEN cannot read a private repository even in
     # the same org.
     #
-    # Gated on a repository VARIABLE rather than `secrets`: `secrets` is not in
-    # scope for a job-level `if` (only github/needs/vars/inputs are), and
-    # `if: ${{ secrets.CONSUMER_TOKEN != '' }}` fails the WHOLE workflow file --
-    # zero jobs, which is what the first run of this workflow reported. A
-    # variable also expresses the real condition -- "this repo can read its
-    # siblings" -- which is a property of the configuration, not of whether a
-    # particular PAT happens to be populated today.
-    if: ${{ vars.CONSUMER_REPOS_ENABLED == '1' }}
+    # THIS JOB IS NOT GATED, and that is the fix for the worst failure mode in
+    # the suite. It used to be:
+    #
+    #   if: ${{ vars.CONSUMER_REPOS_ENABLED == '1' }}
+    #
+    # a repository VARIABLE, not a secret, which nobody has ever set. An unset
+    # `vars.*` is the empty string, so the condition was false, so every one of
+    # these three matrix jobs was SKIPPED -- and a workflow whose every job was
+    # skipped reports SUCCESS. From the run list that is indistinguishable
+    # from three consumer suites having passed.
+    #
+    # The variable was chosen over `secrets` for a real reason, kept here
+    # because it still constrains the fix: `secrets` is not in scope for a
+    # job-level `if` (only github/needs/vars/inputs are), and a bare
+    # `if: ${{ secrets.CONSUMER_TOKEN != '' }}` fails the WHOLE workflow file
+    # -- zero jobs, which is what the first run of this workflow reported. So
+    # the gate cannot simply move to the secret.
+    #
+    # Ungated, the job runs unconditionally and FAILS on a runner with no
+    # CONSUMER_TOKEN, at the guard step below, with a message naming what is
+    # missing. That is the shape the brief asks for: a job that cannot do its
+    # work is a RED job, never a green one. A matrix job that fails for want of
+    # a credential fails on all three legs, which is loud on purpose -- there
+    # is no partial configuration in which "some consumers ran" is true.
     needs: core
     runs-on: ubuntu-latest
     strategy:
@@ -215,7 +344,40 @@ jobs:
       # allowlists.mjs resolve a consumer as REPO_ROOT/../<name>, so the core
       # has to be a SIBLING of the consumer rather than its parent: both live
       # under projects/. See test/consumers.sh, which is what consumes this.
+      #
+      # FIRST, and before every checkout, the credential this job needs is
+      # checked and recorded -- see the long note above on why this job cannot
+      # simply be gated on `secrets.CONSUMER_TOKEN`. A step cannot test
+      # `secrets` in its `if` either (the validator's available contexts are
+      # env, github, inputs, job, matrix, needs, runner, steps, strategy and
+      # vars), so the answer is computed once here, into a step output, and
+      # every step below reads that.
+      #
+      # This step cannot fail, and it must not: it exists so that the failure
+      # lands on the guard at the end of the job as one clear
+      #
+      #   CONSUMER_TOKEN is not set, so the consumer suites were not run.
+      #
+      # rather than as three separate "could not clone a private repository"
+      # errors from checkouts that are only incidental.
+      - name: can this runner read the private consumer repos?
+        id: wired
+        env:
+          CONSUMER_TOKEN: ${{ secrets.CONSUMER_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -n "${CONSUMER_TOKEN:-}" ]; then
+            echo "wired=true" >> "$GITHUB_OUTPUT"
+            echo "CONSUMER_TOKEN is set; checking out the core and all three" \
+                 "consumers."
+          else
+            echo "wired=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::CONSUMER_TOKEN is not set; every checkout in" \
+                 "this job is skipped."
+          fi
+
       - uses: actions/checkout@v5
+        if: steps.wired.outputs.wired == 'true'
         with:
           repository: luxuride-pi-extensions/pi-manager-core
           path: projects/pi-manager-core
@@ -263,6 +425,7 @@ jobs:
       # below: the job answers "does the changed core still match the consumers
       # as they are today", not "does it match one of them".
       - uses: actions/checkout@v5
+        if: steps.wired.outputs.wired == 'true'
         with:
           repository: luxuride-pi-extensions/pi-blender
           path: projects/pi-blender
@@ -270,6 +433,7 @@ jobs:
           token: ${{ secrets.CONSUMER_TOKEN }}
 
       - uses: actions/checkout@v5
+        if: steps.wired.outputs.wired == 'true'
         with:
           repository: luxuride-pi-extensions/pi-unity
           path: projects/pi-unity
@@ -277,6 +441,7 @@ jobs:
           token: ${{ secrets.CONSUMER_TOKEN }}
 
       - uses: actions/checkout@v5
+        if: steps.wired.outputs.wired == 'true'
         with:
           repository: luxuride-pi-extensions/pi-unity-blender
           path: projects/pi-unity-blender
@@ -284,6 +449,7 @@ jobs:
           token: ${{ secrets.CONSUMER_TOKEN }}
 
       - uses: actions/setup-node@v5
+        if: steps.wired.outputs.wired == 'true'
         with:
           node-version: 22
           cache: npm
@@ -293,8 +459,50 @@ jobs:
       # up the tree, and this keeps that from depending on npm's ordering
       # across siblings.
       - name: install the core
+        if: steps.wired.outputs.wired == 'true'
         working-directory: projects/pi-manager-core
         run: npm ci
 
+      # Not `continue-on-error`, unlike it might be elsewhere in this file: when
+      # this step runs it is the whole job, and swallowing its failure would put
+      # back exactly the quiet pass this job was ungated to remove. When it does
+      # not run, the guard below is what makes the job red.
       - name: install and test the consumer
+        id: suite
+        if: steps.wired.outputs.wired == 'true'
         run: projects/pi-manager-core/test/consumers.sh ${{ matrix.repo }}
+
+      # The job cannot be green without having run a consumer suite. This runs
+      # on both paths (`if: always()`), and:
+      #
+      #   * CONSUMER_TOKEN set -> the suite above ran, and its `outcome` must be
+      #     success. `outcome` rather than `conclusion` so that a
+      #     continue-on-error failure anywhere upstream is read as a failure.
+      #
+      #   * CONSUMER_TOKEN unset -> no suite ran at all, so this exits non-zero
+      #     and names the missing setup.
+      #
+      # The old gate made the second case render as SKIPPED, i.e. as a pass.
+      - name: the consumer suite ran, or this job is red
+        if: always()
+        env:
+          WIRED: ${{ steps.wired.outputs.wired }}
+          CONSUMER: ${{ matrix.repo }}
+          SUITE_OUTCOME: ${{ steps.suite.outcome }}
+        run: |
+          set -euo pipefail
+          if [ "$WIRED" != "true" ]; then
+            echo "::error::CONSUMER_TOKEN is not set, so the consumer suite" \
+                 "for $CONSUMER was not run."
+            echo "CONSUMER_TOKEN is a PAT with read access to the" \
+                 "luxuride-pi-extensions org; GITHUB_TOKEN cannot read a" \
+                 "private sibling repo. This job is red on purpose: a green" \
+                 "run that checked no consumer must never be possible."
+            exit 1
+          fi
+          if [ "$SUITE_OUTCOME" != "success" ]; then
+            echo "::error::the $CONSUMER suite did not pass" \
+                 "(outcome: $SUITE_OUTCOME); see the step above."
+            exit 1
+          fi
+          echo "ok $CONSUMER suite ran and passed"
