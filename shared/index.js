@@ -34,5 +34,6 @@ export { xdgCacheHome, expandUserPath, getPiAgentDir, getInstalledExtensionDir }
 export { stripFrontmatter, readPromptFile, isDegradedPrompt, composeManagerPrompt } from "./prompts.js";
 export { CHILD_AGENT_PROMPT_PATTERN, readActiveAgentName } from "./session.js";
 export { createManagerMode } from "./manager-mode.js";
+export { createLazyToolGate } from "./lazy-tools.js";
 export { createContextInjection } from "./context-injection.js";
 export { registerEngageCommand, registerExitCommand } from "./commands.js";

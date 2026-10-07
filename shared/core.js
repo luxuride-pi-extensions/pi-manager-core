@@ -45,5 +45,6 @@ export {
 export { stripFrontmatter, readPromptFile, isDegradedPrompt, composeManagerPrompt } from "./index.js";
 export { CHILD_AGENT_PROMPT_PATTERN, readActiveAgentName } from "./index.js";
 export { createManagerMode } from "./index.js";
+export { createLazyToolGate } from "./index.js";
 export { createContextInjection } from "./index.js";
 export { registerEngageCommand, registerExitCommand } from "./index.js";

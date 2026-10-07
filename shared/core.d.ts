@@ -38,6 +38,7 @@ export {
 	type ManagerModeOptions,
 	type ManagerMode,
 } from "./index.js";
+export { createLazyToolGate, type LazyToolGate, type LazyToolGateOptions } from "./index.js";
 export {
 	createContextInjection,
 	type SystemPromptEventLike,
