@@ -165,6 +165,18 @@ let passed = 0;
 const failures = [];
 const skipped = [];
 
+/**
+ * Whether an absent consumer checkout is an error.
+ *
+ * Same input as in extension-registration.mjs and allowlists.mjs, for the same
+ * reason: these checks read sibling repositories, so they cannot run in a clone
+ * of this repository alone. Allowed as a reported skip locally, fatal where the
+ * checkouts were made on purpose (PI_REQUIRE_CONSUMERS=1, set by the `consumers`
+ * job in ci.yml) — otherwise the job could report green having read no README
+ * and no manager prompt at all.
+ */
+const REQUIRED = process.env.PI_REQUIRE_CONSUMERS === "1";
+
 function check(label, ok, detail = "") {
 	if (ok) {
 		passed += 1;
@@ -212,7 +224,7 @@ for (const {
 } of EXTENSIONS) {
 	const dir = join(PROJECTS, repo);
 	if (!existsSync(dir)) {
-		skipped.push(`${repo} (not checked out)`);
+		skipped.push(`${repo} (not checked out at ${dir})`);
 		continue;
 	}
 
@@ -352,7 +364,21 @@ for (const {
 	}
 }
 
-for (const s of skipped) console.log(`skipped ${s}`);
-console.log(`\n${passed} passed, ${failures.length} failed`);
+// stderr, and never the word `ok`: these are the checks that decide whether a
+// README documents a tool that exists and a prompt names an agent that can be
+// spawned, and a skipped one printed as a pass is the failure mode. The count
+// appears in the summary so the reader can see coverage rather than infer it.
+for (const s of skipped) console.error(`SKIPPED ${s} — no documentation was verified for this consumer`);
+console.log(
+	`\n${passed} passed, ${failures.length} failed` +
+		(skipped.length ? `, ${skipped.length} NOT VERIFIED` : ""),
+);
 for (const f of failures) console.error(`FAIL ${f}`);
 if (failures.length > 0) process.exitCode = 1;
+if (skipped.length > 0 && REQUIRED) {
+	console.error(
+		`\nPI_REQUIRE_CONSUMERS=1 and ${skipped.length} consumer checkout(s) are absent, so no documentation ` +
+			"was checked at all. A green run here means nothing.",
+	);
+	process.exitCode = 1;
+}

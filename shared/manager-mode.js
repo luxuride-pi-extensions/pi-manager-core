@@ -184,14 +184,53 @@ export function createManagerMode({ allowedTools, agentRoster, onGateMessage } =
  * `status` because it carries no agent name would make the manager unable to
  * find out what its own children are doing.
  *
+ * WHICH SHAPE COUNTS is the subtle half. The rule this function exists to
+ * enforce is "only these names may be spawned", and an earlier version read the
+ * target as `typeof input.agent === "string" ? input.agent.trim() : ""` and
+ * allowed anything that came out empty. That let through every `agent` field the
+ * core cannot read: `{agent: undefined}`, `{agent: 42}`, `{agents: [...]}`
+ * (plural — the field the model guessed), `{agent: {name: "x"}}`, and a call
+ * naming neither field at all. Every one of them took the allow-branch, so a
+ * caller that guessed the parameter wrong got an unconstrained spawn behind a
+ * gate whose whole claim is that the roster cannot drift.
+ *
+ * So the decision is made on the FIELD, and a control action is identified by
+ * `action` rather than by the absence of `agent` — which is what separates "go
+ * and look at the children" from "spawn one, but I do not know what this
+ * parameter is called".
+ *
  * The refusal names the way out. "Not in the roster" alone reads as a dead end
  * and produces a manager that stalls or reaches for an unrelated agent, which is
  * the exact failure the roster exists to prevent.
+ *
+ * KNOWN LIMIT, deliberately not fixed here: this check runs inside one
+ * extension's `tool_call` handler, and pi's ToolCallEvent.input is mutable and
+ * "No re-validation is performed after mutation" (pi's
+ * dist/core/extensions/types.d.ts). An extension registering AFTER this one can
+ * therefore rewrite `input.agent` into an on-roster name after the check passed.
+ * Only pi could close that, by validating after every handler has run; no
+ * ordering inside this file can. Recorded rather than worked around, because the
+ * workaround would be a check that reads as a guarantee it cannot be.
  */
 function checkRoster(event, roster, hasRoster) {
 	if (!hasRoster || event.toolName !== "subagent") return null;
-	const target = typeof event.input?.agent === "string" ? event.input.agent.trim() : "";
-	if (target.length === 0 || roster.has(target)) return null;
+	const input = event.input ?? {};
+	const field = input.agent;
+	// A control action carries no agent and says so with `action`: status, list,
+	// stop, resume. Refusing `status` because it names no agent would make the
+	// manager unable to find out what its own children are doing.
+	if (Object.hasOwn(input, "action") && (field === undefined || field === null)) return null;
+	// Everything else is a spawn. Including `{agent: undefined}` and
+	// `{agent: null}` on their own: `null` is how a schema with
+	// `agent: string | null` says "I am not naming one", and a call carrying no
+	// `action` key is not managing anything, so the gate cannot tell which.
+	if (typeof field !== "string") return unusableSpawn(field, roster);
+	const target = field.trim();
+	// Whitespace-only is still not an off-roster NAME, and refusing it would
+	// break the "let pi choose" spawn a manager legitimately makes. That is the
+	// one shape still allowed without being on the roster.
+	if (target.length === 0) return null;
+	if (roster.has(target)) return null;
 	return {
 		block: true,
 		reason:
@@ -200,6 +239,35 @@ function checkRoster(event, roster, hasRoster) {
 			"reassigning work that has an owner. If none of them covers a capability you need, say so in " +
 			"your report rather than reaching for an unrelated agent.",
 	};
+}
+
+/** Refusal for an `agent` field the core cannot read as a roster name. */
+function unusableSpawn(field, roster) {
+	const names = [...roster];
+	const shown =
+		field === null || field === undefined
+			? `absent or null (${typeof field})`
+			: typeof field === "string"
+				? JSON.stringify(field)
+				: `${typeof field} ${safeInspect(field)}`;
+	return {
+		block: true,
+		reason:
+			`Manager role: a spawn whose \`agent\` field is ${shown} was refused because this gate cannot ` +
+			`tell which agent it names, and the manager may only spawn ${names.join(", ")}. Send the agent ` +
+			`name as a plain string in \`agent\` — for example \`agent: "${names[0]}"\` — or, if you meant to ` +
+			"manage the children rather than spawn one, use the control action (which carries no agent at all).",
+	};
+}
+
+/** Best-effort short description of an unusable value, never unbounded. */
+function safeInspect(value) {
+	try {
+		const text = typeof value === "object" && value !== null ? JSON.stringify(value) : String(value);
+		return text.length > 80 ? `${text.slice(0, 80)}…` : text;
+	} catch {
+		return "(unreadable value)";
+	}
 }
 
 function defaultGateReason(toolName) {

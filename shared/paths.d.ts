@@ -10,6 +10,6 @@ export function xdgCacheHome(): string;
 /** Expand a leading `~`; resolve a relative path against `cwd`. */
 export function expandUserPath(raw: unknown, cwd?: string): string;
 /** Where pi keeps its agent directory, which is where extensions are installed. */
-export function getPiAgentDir(): string;
+export function getPiAgentDir(cwd?: string): string;
 /** The directory of an installed extension, by the name pi installs it under. */
 export function getInstalledExtensionDir(name: string): string;

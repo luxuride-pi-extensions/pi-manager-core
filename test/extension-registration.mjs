@@ -129,10 +129,13 @@ for (const [name, entry] of Object.entries(MODULES)) {
 	try {
 		extension(pi);
 	} catch (error) {
+		// The throw IS the assertion, and recording it here is what makes the
+		// registration counts below meaningful. There used to also be
+		// `check("... registered without throwing", true)` on the next line,
+		// which could not fail: reaching it already meant nothing was thrown.
 		failures.push(`${name}: threw while registering — ${error instanceof Error ? error.message : String(error)}`);
 		continue;
 	}
-	check(`${name}: registered without throwing`, true);
 
 	// Every manager has an engage and an exit command. The names are the
 	// extension's own, so this checks the pair exists rather than a fixed name.
