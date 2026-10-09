@@ -135,7 +135,26 @@ for (const ext of EXTENSIONS) {
 		continue;
 	}
 
-	const blocked = expected.filter((tool) => gate(tool)?.block === true);
+	// Each tool is probed with a REAL call shape, not with `{}`.
+	//
+	// `{}` is not a call pi makes, and for `subagent` it is now a refused one:
+	// the roster check in shared/manager-mode.js refuses a spawn whose `agent`
+	// field it cannot read, precisely so that `{agent: undefined}`, the plural
+	// `{agents: [...]}` and a call naming nothing at all cannot slip past the
+	// roster. A bare `{}` is that shape, so probing it here measures the ROSTER
+	// policy instead of the allowlist this check is about, and reports the
+	// allowlisted `subagent` as refused.
+	//
+	// A control action is the shape that isolates the question: it carries no
+	// agent (so the roster check passes it through by design) and it is a call
+	// the manager really makes to look at its children, so the only thing left
+	// under test is whether `subagent` is in the allowlist at all. The named
+	// roster-member spawns and the refusals below are still probed explicitly,
+	// which is where the roster policy is actually asserted.
+	const PROBE_INPUT = { subagent: { action: "status" } };
+	const blocked = expected.filter(
+		(tool) => gate(tool, PROBE_INPUT[tool] ?? {})?.block === true,
+	);
 	check(
 		`${ext.dir}: every tool in the manager prompt is allowed`,
 		blocked.length === 0,
