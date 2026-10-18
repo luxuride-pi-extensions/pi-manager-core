@@ -6,7 +6,7 @@
  * shared core from, and so there is exactly one place where that core's
  * location, version and presence are checked.
  *
- * Why a shared core at all. Three extensions — pi-blender, pi-unity
+ * Why a shared core at all. Three extensions — pi-blender, pi-unity-vrchat
  * and pi-unity-blender — each grew the same machinery independently: an engage
  * slash command that turns the session into a manager, an exit command that
  * lifts a write/edit/image gate, a child-session detector, a manager-prompt
@@ -78,7 +78,7 @@ export interface CoreHealth {
  * it as `unity-blender`. Both names are real and they are not the same string,
  * because the install name comes from the directory pi is given rather than
  * from the package's own `name`. Confirmed on disk: `<agent-dir>/extensions`
- * holds `pi-blender`, `pi-unity` and `unity-blender`. So the two names here are
+ * holds `pi-blender`, `pi-unity-vrchat` and `unity-blender`. So the two names here are
  * deliberate and "correcting" the third to match its package name breaks the
  * install check AND composeManagerPrompt's side lookup in the same stroke --
  * which is why they are declared once, exported, and asserted against the real
@@ -92,7 +92,7 @@ export interface CoreHealth {
  * one place the list is still written twice, and the test above is what keeps
  * the two copies from drifting.
  */
-export const CONSUMER_EXTENSION_DIRS: readonly string[] = ["pi-blender", "pi-unity", "unity-blender"];
+export const CONSUMER_EXTENSION_DIRS: readonly string[] = ["pi-blender", "pi-unity-vrchat", "unity-blender"];
 
 /** Report whether the core is usable and who is using it. Read-only. */
 export function getCoreHealth(piAgentDir: string): CoreHealth {

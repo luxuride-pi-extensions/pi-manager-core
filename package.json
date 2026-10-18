@@ -1,5 +1,5 @@
 {
-	"name": "pi-manager-core",
+	"name": "@luxuride-pi/manager-core",
 	"version": "0.1.0",
 	"description": "pi extension: the shared core of the manager-mode extensions (engage command, manager gate, prompt composition, path resolution)",
 	"keywords": [
@@ -8,7 +8,6 @@
 		"subagent",
 		"manager"
 	],
-	"private": true,
 	"type": "module",
 	"license": "MIT",
 	"files": [

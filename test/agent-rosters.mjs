@@ -41,7 +41,7 @@ const REQUIRED = process.env.PI_REQUIRE_CONSUMERS === "1";
 /** Where each manager declares its roster, and the prompt that must agree. */
 const CONSUMERS = [
 	{ repo: "pi-blender", set: "BLENDER_MANAGER_ROSTER", prompt: "blender/agents/blender-manager.md" },
-	{ repo: "pi-unity", set: "UNITY_MANAGER_ROSTER", prompt: "unity/agents/unity-manager.md" },
+	{ repo: "pi-unity-vrchat", set: "UNITY_MANAGER_ROSTER", prompt: "unity/agents/unity-manager.md" },
 	{
 		repo: "pi-unity-blender",
 		set: "UNITY_BLENDER_MANAGER_ROSTER",

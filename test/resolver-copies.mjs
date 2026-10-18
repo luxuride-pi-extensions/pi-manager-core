@@ -51,7 +51,7 @@ const REQUIRED = process.env.PI_REQUIRE_CONSUMERS === "1";
 /** The consumers, and the two files each carries a copy of. */
 const CONSUMERS = [
 	{ repo: "pi-blender", shim: "manager-core.ts", checks: "scripts/agent-template-checks.mjs" },
-	{ repo: "pi-unity", shim: "manager-core.ts", checks: "scripts/agent-template-checks.mjs" },
+	{ repo: "pi-unity-vrchat", shim: "manager-core.ts", checks: "scripts/agent-template-checks.mjs" },
 	{ repo: "pi-unity-blender", shim: "manager-core.ts", checks: "scripts/agent-template-checks.mjs" },
 ];
 

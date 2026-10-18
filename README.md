@@ -10,7 +10,7 @@ checked.
 ## Why a shared core exists
 
 Three extensions — [pi-blender](../pi-blender),
-[pi-unity](../pi-unity) and [pi-unity-blender](../pi-unity-blender) —
+[pi-unity-vrchat](../pi-unity-vrchat) and [pi-unity-blender](../pi-unity-blender) —
 each grew the same machinery independently: an engage slash command that turns the
 session into a manager, an exit command that lifts a write/edit/image gate, a
 child-session detector, a manager-prompt composer, and an installer that stamps
@@ -57,7 +57,7 @@ $ npm run which-core
 shared core installed: yes  (~/.pi/agent/extensions/manager-core/shared/core.js)
 
 pi-blender  shared core  <- ~/.pi/agent/extensions/manager-core
-pi-unity    shared core  <- ~/.pi/agent/extensions/manager-core
+pi-unity-vrchat    shared core  <- ~/.pi/agent/extensions/manager-core
 pi-unity-blender shared core  <- ~/.pi/agent/extensions/manager-core
 
 OK: every consumer loads the shared core (~/.pi/agent/extensions/manager-core)
@@ -69,7 +69,7 @@ Each consumer declares the relationship, so it is recorded rather than implied
 by the resolver's probe order:
 
 ```json
-"peerDependencies": { "pi-manager-core": "*" }
+"peerDependencies": { "@luxuride-pi/manager-core": "*" }
 ```
 
 A peer, not a dependency, and unbundled — per `docs/packages.md`, an imported Pi
@@ -121,20 +121,21 @@ that silently never reaches the extensions. Both are quiet, so both are tested.
 
 ## Releases
 
-Every release is a **git tag**, not a published npm package. All four packages
-in this organization are `"private": true`, so `npm publish` refuses them, and
-unsetting that flag to get a publish through would trade a correct manifest for
-a working script.
+Every release is both a **git tag** and an npm package. The package publishes
+as `@luxuride-pi/manager-core` from the release workflow via npm trusted
+publishing (OIDC from GitHub Actions — no publish token exists anywhere).
 
-pi installs this extension from the **clone**, not from a tarball: `installGit()`
-runs `git clone`, an optional `git checkout <ref>`, then
+pi can also install this extension from the **clone**: `installGit()` runs
+`git clone`, an optional `git checkout <ref>`, then
 `npm install --legacy-peer-deps` inside it, and pi loads the extension's
-TypeScript straight from source through jiti. So a tag *is* the artifact — there
-is no build step and nothing to compile.
+TypeScript straight from source through jiti. So a tag *is* the artifact for a
+git install — there is no build step and nothing to compile.
 
 ### Install a release
 
 ```bash
+pi install npm:@luxuride-pi/manager-core@^<version>
+# or, from the clone:
 pi install git:github.com/luxuride-pi-extensions/pi-manager-core@v<version>
 ```
 

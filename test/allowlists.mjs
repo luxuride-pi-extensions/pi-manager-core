@@ -52,7 +52,7 @@ const EXTENSIONS = [
 		refusesImageReads: true,
 	},
 	{
-		dir: "pi-unity",
+		dir: "pi-unity-vrchat",
 		prompt: "unity/agents/unity-manager.md",
 		roster: ["unity-worker", "unity-critic"],
 		refusesImageReads: false,

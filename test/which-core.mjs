@@ -27,7 +27,7 @@ console.log(`shared core installed: ${existsSync(installedCore) ? "yes" : "NO"} 
 let failed = false;
 const resolvedFrom = new Map();
 
-for (const name of ["pi-blender", "pi-unity", "pi-unity-blender"]) {
+for (const name of ["pi-blender", "pi-unity-vrchat", "pi-unity-blender"]) {
 	const dir = join(REPO_ROOT, "..", name);
 	if (!existsSync(dir)) {
 		console.log(`${name.padEnd(16)} SKIP (checkout not present)`);

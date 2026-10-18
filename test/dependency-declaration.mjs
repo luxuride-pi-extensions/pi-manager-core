@@ -32,8 +32,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const REPO_ROOT = join(fileURLToPath(new URL(".", import.meta.url)), "..");
-const CORE_NAME = "pi-manager-core";
-const CONSUMERS = ["pi-blender", "pi-unity", "pi-unity-blender"];
+const CORE_NAME = "@luxuride-pi/manager-core";
+const CONSUMERS = ["pi-blender", "pi-unity-vrchat", "pi-unity-blender"];
 const REQUIRED = process.env.PI_REQUIRE_CONSUMERS === "1";
 
 const failures = [];

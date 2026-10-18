@@ -19,7 +19,7 @@ const jiti = createJiti(import.meta.url, { isolated: true, interopDefault: true 
 const REPO_ROOT = join(import.meta.dirname, "..");
 const MANAGER_PROMPT = "You are the manager.";
 
-for (const name of ["pi-blender", "pi-unity", "pi-unity-blender"]) {
+for (const name of ["pi-blender", "pi-unity-vrchat", "pi-unity-blender"]) {
 	const mod = await jiti.import(join(REPO_ROOT, "..", name, "index.ts"));
 	const extension = mod.default;
 

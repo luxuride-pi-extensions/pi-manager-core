@@ -25,7 +25,7 @@ const REPO_ROOT = join(import.meta.dirname, "..");
 
 const MODULES = {
 	"pi-blender": "index.ts",
-	"pi-unity": "index.ts",
+	"pi-unity-vrchat": "index.ts",
 	"pi-unity-blender": "index.ts",
 };
 

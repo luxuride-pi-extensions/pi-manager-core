@@ -78,7 +78,7 @@ const AMBIENT_TOOLS = new Set([
  * session.
  *
  * `readmeTools` differs per extension because there is no house style to copy:
- * pi-unity documents one tool per table row, pi-blender has a single prose
+ * pi-unity-vrchat documents one tool per table row, pi-blender has a single prose
  * bullet listing all thirteen, and pi-unity-blender has no inventory at all, so
  * its scan runs over every backticked name. `readmeSkip` drops sections that
  * mention tools in passing (a worked example is prose about a flow, and its
@@ -120,7 +120,7 @@ const EXTENSIONS = [
 		readmeSkip: ["A session in the wild"],
 	},
 	{
-		repo: "pi-unity",
+		repo: "pi-unity-vrchat",
 		managerPrompt: "unity/agents/unity-manager.md",
 		childPrompts: [
 			"unity/agents/unity-critic.md",
@@ -157,7 +157,7 @@ const EXTENSIONS = [
 		 * entirely, and the check is the reason the `unity_capture_view` defect
 		 * was ever caught.
 		 */
-		alsoProvidedBy: ["pi-blender", "pi-unity"],
+		alsoProvidedBy: ["pi-blender", "pi-unity-vrchat"],
 	},
 ];
 
@@ -343,7 +343,7 @@ for (const {
 	);
 	check(`${repo}: the README actually names tools`, documented.size > 0, `${documented.size} names`);
 
-	// The other direction, which the original pi-unity test also asserted: a
+	// The other direction, which the original pi-unity-vrchat test also asserted: a
 	// registered tool nobody has heard of. Only meaningful for the tools an
 	// extension registers ITSELF, so the side extensions' tools are excluded for
 	// the binder -- its README is not the place to document another extension's

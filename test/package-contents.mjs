@@ -53,7 +53,7 @@ const PROJECTS = resolve(REPO_ROOT, "..");
 const PACKAGES = [
 	{ repo: "pi-manager-core", entry: "index.ts" },
 	{ repo: "pi-blender", entry: "index.ts" },
-	{ repo: "pi-unity", entry: "index.ts" },
+	{ repo: "pi-unity-vrchat", entry: "index.ts" },
 	{ repo: "pi-unity-blender", entry: "index.ts" },
 ];
 
@@ -73,7 +73,7 @@ const ALWAYS_SHIP = ["core/", "scripts/", "agents/", "skills/"];
 /** Resource dirs a consumer publishes through a resources_discover hook. */
 const SKILL_DIRS = {
 	"pi-blender": ["blender/skills"],
-	"pi-unity": ["unity/skills"],
+	"pi-unity-vrchat": ["unity/skills"],
 	"pi-unity-blender": ["skills"],
 };
 
