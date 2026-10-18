@@ -32,12 +32,14 @@ callback; the message is the consumer's.
 Install alongside the extensions that use it, the same way they are installed:
 
 ```sh
-ln -s "$PWD" ~/.pi/agent/extensions/manager-core
+pi install npm:@luxuride-pi/manager-core
 ```
 
-Or, as a package, from `package.json`'s `pi.extensions` manifest — `index.ts`
-sits at the package root rather than under `extensions/`, so that manifest is
-load-bearing, not a narrowing.
+or, from a clone for development:
+
+```sh
+ln -s "$PWD" ~/.pi/agent/extensions/manager-core
+```
 
 **A missing core is a hard error.** Each consumer used to carry a 420-line local
 copy of the whole mechanism, so an extension installed on its own still ran. That
@@ -133,7 +135,7 @@ git install — there is no build step and nothing to compile.
 
 ### Install a release
 
-```bash
+```sh
 pi install npm:@luxuride-pi/manager-core@^<version>
 # or, from the clone:
 pi install git:github.com/luxuride-pi-extensions/pi-manager-core@v<version>
@@ -146,7 +148,7 @@ an unpinned spec is not a release, it is a moving target.
 
 1. Bump `version` in `package.json` and commit that on its own.
 2. Tag the commit that contains the bump — the tag and the version must agree:
-   ```bash
+   ```sh
    git tag v<version> && git push origin master --tags
    ```
 3. `.github/workflows/release.yml` packs the tarball, checks it, and publishes
@@ -156,9 +158,3 @@ Step 2 is the one that is easy to get wrong, so the workflow refuses to guess:
 it fails when the tag is not on the commit being released, and again when the
 tag does not match `package.json`'s `version`. Bump the version *before*
 tagging; the tag is not the place to bump.
-
-The `npm pack --dry-run` check in the release workflow is deliberately a copy of
-what `pi-manager-core`'s `test/package-contents.mjs` proves on every CI run. A
-release workflow that borrowed the check from another repository would depend on
-that repository being checked out at the right ref, which is a moving part a
-release should not have.
