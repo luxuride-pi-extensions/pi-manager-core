@@ -86,11 +86,45 @@ link() {
 	ln -sfn "$PROJECTS/$repo" "$EXTENSIONS/$name"
 	echo "    linked $name -> $PROJECTS/$repo"
 }
+# The vrchat consumer's REPOSITORY is pi-unity-vrchat -- that is the name CI
+# checks it out under -- while a long-lived local clone is usually pi-unity.
+# Both trees install as the extension pi-unity, which is the name the suites
+# load, so the INSTALL name never varies; only the directory to link does.
+# Taking the first candidate that exists keeps CI and a developer's checkout on
+# the same code path instead of pinning one layout and skipping on the other.
+resolve_dir() {
+	for candidate in "$@"; do
+		if [ -d "$PROJECTS/$candidate" ]; then
+			echo "$candidate"
+			return 0
+		fi
+	done
+	return 1
+}
+
+UNITY_REPO="$(resolve_dir pi-unity-vrchat pi-unity || true)"
+
 link pi-manager-core manager-core
 link pi-manager-core pi-manager-core
 link "$name" "$name"
 link pi-blender pi-blender
-link pi-unity pi-unity
+# ALL THREE names for the vrchat consumer, because the three names are all in
+# use and none of them is wrong: pi derives `unity-vrchat` from the package
+# (@luxuride-pi/unity-vrchat, unscoped -- the same rule that gives `blender`,
+# `manager-core` and `unity-blender`) and pi-unity's own engagement-test.mjs
+# loads that one by absolute path; `pi-unity-vrchat` is the repository name,
+# which is what a git install produces and what pi-unity-blender's config.ts
+# reads for its Unity side prompt; `pi-unity` is what a long-lived clone of the
+# repository is actually called on a developer's machine.
+#
+# The three repos disagree about this, which is a real problem, but it is not
+# this job's problem: this job answers "does the changed core still match the
+# consumers", and a fixture covering every install shape it can is the honest
+# way to ask that. Deciding which name pi should install under is a separate
+# change, and one this fixture must not pre-empt.
+link "${UNITY_REPO:-pi-unity-vrchat}" unity-vrchat
+link "${UNITY_REPO:-pi-unity-vrchat}" pi-unity-vrchat
+link "${UNITY_REPO:-pi-unity-vrchat}" pi-unity
 link pi-unity-blender unity-blender
 
 # A LINK is not an INSTALL. The suites load the siblings' index.ts through jiti
@@ -110,8 +144,17 @@ link pi-unity-blender unity-blender
 # this is three more full installs per matrix job and the registry chatter is
 # the slowest part of them.
 echo "==> $name: install the siblings it loads"
-for sibling in pi-blender pi-unity pi-unity-blender; do
+for sibling in pi-blender "${UNITY_REPO:-pi-unity-vrchat}" pi-unity-blender; do
 	[ "$sibling" = "$name" ] && continue
+	# Absent is not an error here for the same reason it is not one in link():
+	# this script also runs from a directory holding only the core and one
+	# consumer. Without this check the loop tried `cd` into a checkout that was
+	# never made and failed the whole job at the install step, with the skip
+	# message for that same repository printed a few lines earlier.
+	if [ ! -d "$PROJECTS/$sibling" ]; then
+		echo "    (skipping $sibling: not checked out beside the core)"
+		continue
+	fi
 	[ -d "$PROJECTS/$sibling/node_modules" ] && continue
 	echo "    installing $sibling"
 	(cd "$PROJECTS/$sibling" && npm ci --legacy-peer-deps --no-audit --no-fund >/dev/null)
@@ -126,6 +169,30 @@ done
 # resolves a consumer as REPO_ROOT/../<name>, which is PROJECTS/<name> -- the
 # layout this script already requires and cannot invent if the caller put the
 # core somewhere else.
+# The Blender-side Python is a SEPARATE package, @luxuride-pi/blender-bridge,
+# and a GPL one; it is deliberately not an npm dependency, because npm 12
+# refuses non-registry artifacts by default (`allow-git`/`allow-remote` are
+# "none") and a git or tarball spec would break `npm ci` for every consumer.
+# Without it, every pi-blender suite that touches a .py file dies at import with
+# "Could not find the bridge package" -- 86 of them.
+#
+# pi-blender's own CI fetches the RELEASE ASSET, because there it is testing the
+# artifact that ships. Here the scripts are fixtures, so a shallow clone of the
+# same public repository is enough, and it does not add a second place to pin a
+# version. An explicitly set PI_BLENDER_BRIDGE_ASSETS_DIR is still authoritative:
+# if it has no blender/live-bridge.py that is an error, not something to replace.
+BRIDGE_DIR="${PI_BLENDER_BRIDGE_ASSETS_DIR:-$PROJECTS/pi-blender-bridge}"
+if [ ! -f "$BRIDGE_DIR/blender/live-bridge.py" ]; then
+	if [ -n "${PI_BLENDER_BRIDGE_ASSETS_DIR:-}" ]; then
+		echo "consumers.sh: PI_BLENDER_BRIDGE_ASSETS_DIR is $BRIDGE_DIR, which has no blender/live-bridge.py" >&2
+		exit 65
+	fi
+	echo "    fetching the bridge package -> $BRIDGE_DIR"
+	rm -rf "$BRIDGE_DIR"
+	git clone --quiet --depth 1 https://github.com/luxuride-pi-extensions/pi-blender-bridge "$BRIDGE_DIR"
+fi
+export PI_BLENDER_BRIDGE_ASSETS_DIR="$BRIDGE_DIR"
+
 echo "==> $name: test"
 PI_MANAGER_CORE_DIR="$REPO_ROOT" \
 	PI_AGENT_DIR="$AGENT_DIR" \

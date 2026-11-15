@@ -56,7 +56,19 @@ export interface ManagerMode {
 	reset(reason?: string): void;
 	/** null to allow, or the refusal that blocks the call. */
 	checkToolCall(event: ToolCallEvent, systemPrompt: string | null | undefined): ToolCallRefusal | null;
-	install(pi: unknown): void;
+	/**
+	 * Register the gate, and return the handler it registered. The handler is
+	 * marked `managerGate: true`, which is how a test picks it out of an
+	 * extension's other `tool_call` handlers instead of trusting the
+	 * registration order.
+	 */
+	install(pi: unknown): ManagerGateHandler;
+}
+
+/** The `tool_call` handler `install` registers, with its identifying marker. */
+export interface ManagerGateHandler {
+	(event: ToolCallEvent, ctx: { getSystemPrompt(): string | null | undefined }): ToolCallRefusal | null;
+	managerGate: true;
 }
 
 export function createManagerMode(options?: ManagerModeOptions): ManagerMode;

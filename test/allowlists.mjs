@@ -97,8 +97,23 @@ async function engagedGate(dir) {
 	mod.default(pi);
 	const engage = [...events.keys()].find((k) => k.startsWith("cmd:") && !k.endsWith("-exit"));
 	await events.get(engage).handler("build a thing", { ui: { notify: () => {} }, isIdle: () => true });
-	const gate = events.get("tool_call")?.[0];
-	if (!gate) throw new Error(`${dir}: no tool_call handler is registered`);
+	// The manager gate, found by MARKER rather than by position.
+	//
+	// An extension registers more than one `tool_call` handler — pi-blender's
+	// capability gate is registered before the manager gate — and position 0 is
+	// that capability gate, which refuses nothing in a session that is not a
+	// child. Probing it made "every tool in the manager prompt is allowed" pass
+	// vacuously and reported four refusals as lost policy (write, edit, the
+	// image read, bash) while every allowlist was in fact correct. The marker is
+	// set inside manager-core's `install()`, next to the registration, so it
+	// cannot drift from the gate it names.
+	const handlers = events.get("tool_call") ?? [];
+	const gate = handlers.find((handler) => handler.managerGate === true);
+	if (!gate) {
+		throw new Error(
+			`${dir}: none of the ${handlers.length} tool_call handler(s) carries the manager gate marker`,
+		);
+	}
 	return (toolName, input = {}) =>
 		gate({ toolName, input, toolCallId: "probe" }, { getSystemPrompt: () => MANAGER_PROMPT });
 }
