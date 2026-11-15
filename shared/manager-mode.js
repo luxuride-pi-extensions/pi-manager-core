@@ -170,7 +170,20 @@ export function createManagerMode({ allowedTools, agentRoster, onGateMessage } =
 	 * its NAMES do not.
 	 */
 	function install(pi) {
-		pi.on("tool_call", (event, ctx) => checkToolCall(event, ctx.getSystemPrompt()));
+		// TAGGED, and returned, because the handler cannot otherwise be
+		// identified from outside. An extension registers more than one
+		// `tool_call` handler: pi-blender's capability gate is registered a few
+		// hundred lines before this one, and a consumer check that took
+		// `events.get("tool_call")[0]` therefore probed the WRONG gate. The
+		// capability gate blocks nothing for a session that is not a child, so
+		// the check reported every manager tool as allowed (vacuously) and four
+		// refusals — write, edit, the image read, bash — as lost policy. The
+		// marker is the smallest contract that fixes it without pinning a
+		// registration order the extensions are free to change.
+		const handler = (event, ctx) => checkToolCall(event, ctx.getSystemPrompt());
+		handler.managerGate = true;
+		pi.on("tool_call", handler);
+		return handler;
 	}
 
 	return { markEngaged, markUsed, clearGate, isEngaged, isManagerSession, reset, checkToolCall, install };

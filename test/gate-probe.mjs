@@ -40,10 +40,12 @@ for (const name of ["pi-blender", "pi-unity-vrchat", "pi-unity-blender"]) {
 	const engageName = [...events.keys()].find((k) => k.startsWith("cmd:") && !k.endsWith("-exit"));
 	await events.get(engageName).handler("build a thing", { ui: { notify: () => {} }, isIdle: () => true });
 
-	const gate = events.get("tool_call")?.[0];
+	// The manager gate, by marker: an extension registers other `tool_call`
+	// handlers too, and the first one is not this one.
+	const gate = (events.get("tool_call") ?? []).find((handler) => handler.managerGate === true);
 	console.log(`\n=== ${name}  (gate installed: ${Boolean(gate)})`);
 	if (!gate) {
-		console.log("  no tool_call handler — the gate never runs");
+		console.log("  no marked manager gate among the tool_call handlers — the gate never runs");
 		continue;
 	}
 
