@@ -86,11 +86,29 @@ link() {
 	ln -sfn "$PROJECTS/$repo" "$EXTENSIONS/$name"
 	echo "    linked $name -> $PROJECTS/$repo"
 }
+# The vrchat consumer's REPOSITORY is pi-unity-vrchat -- that is the name CI
+# checks it out under -- while a long-lived local clone is usually pi-unity.
+# Both trees install as the extension pi-unity, which is the name the suites
+# load, so the INSTALL name never varies; only the directory to link does.
+# Taking the first candidate that exists keeps CI and a developer's checkout on
+# the same code path instead of pinning one layout and skipping on the other.
+resolve_dir() {
+	for candidate in "$@"; do
+		if [ -d "$PROJECTS/$candidate" ]; then
+			echo "$candidate"
+			return 0
+		fi
+	done
+	return 1
+}
+
+UNITY_REPO="$(resolve_dir pi-unity-vrchat pi-unity || true)"
+
 link pi-manager-core manager-core
 link pi-manager-core pi-manager-core
 link "$name" "$name"
 link pi-blender pi-blender
-link pi-unity pi-unity
+link "${UNITY_REPO:-pi-unity-vrchat}" pi-unity
 link pi-unity-blender unity-blender
 
 # A LINK is not an INSTALL. The suites load the siblings' index.ts through jiti
@@ -110,8 +128,17 @@ link pi-unity-blender unity-blender
 # this is three more full installs per matrix job and the registry chatter is
 # the slowest part of them.
 echo "==> $name: install the siblings it loads"
-for sibling in pi-blender pi-unity pi-unity-blender; do
+for sibling in pi-blender "${UNITY_REPO:-pi-unity-vrchat}" pi-unity-blender; do
 	[ "$sibling" = "$name" ] && continue
+	# Absent is not an error here for the same reason it is not one in link():
+	# this script also runs from a directory holding only the core and one
+	# consumer. Without this check the loop tried `cd` into a checkout that was
+	# never made and failed the whole job at the install step, with the skip
+	# message for that same repository printed a few lines earlier.
+	if [ ! -d "$PROJECTS/$sibling" ]; then
+		echo "    (skipping $sibling: not checked out beside the core)"
+		continue
+	fi
 	[ -d "$PROJECTS/$sibling/node_modules" ] && continue
 	echo "    installing $sibling"
 	(cd "$PROJECTS/$sibling" && npm ci --legacy-peer-deps --no-audit --no-fund >/dev/null)
