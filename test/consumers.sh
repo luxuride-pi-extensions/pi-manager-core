@@ -108,6 +108,13 @@ link pi-manager-core manager-core
 link pi-manager-core pi-manager-core
 link "$name" "$name"
 link pi-blender pi-blender
+# BOTH names for the vrchat consumer. `unity-vrchat` is the one pi derives from
+# the package (@luxuride-pi/unity-vrchat, unscoped -- the same rule that gives
+# `blender`, `manager-core` and `unity-blender`), and it is what pi-unity's own
+# engagement-test.mjs loads by absolute path. `pi-unity` is what a long-lived
+# git clone of the repository is called. Linking both costs one symlink and
+# removes the question of which one a suite was written against.
+link "${UNITY_REPO:-pi-unity-vrchat}" unity-vrchat
 link "${UNITY_REPO:-pi-unity-vrchat}" pi-unity
 link pi-unity-blender unity-blender
 
@@ -153,6 +160,30 @@ done
 # resolves a consumer as REPO_ROOT/../<name>, which is PROJECTS/<name> -- the
 # layout this script already requires and cannot invent if the caller put the
 # core somewhere else.
+# The Blender-side Python is a SEPARATE package, @luxuride-pi/blender-bridge,
+# and a GPL one; it is deliberately not an npm dependency, because npm 12
+# refuses non-registry artifacts by default (`allow-git`/`allow-remote` are
+# "none") and a git or tarball spec would break `npm ci` for every consumer.
+# Without it, every pi-blender suite that touches a .py file dies at import with
+# "Could not find the bridge package" -- 86 of them.
+#
+# pi-blender's own CI fetches the RELEASE ASSET, because there it is testing the
+# artifact that ships. Here the scripts are fixtures, so a shallow clone of the
+# same public repository is enough, and it does not add a second place to pin a
+# version. An explicitly set PI_BLENDER_BRIDGE_ASSETS_DIR is still authoritative:
+# if it has no blender/live-bridge.py that is an error, not something to replace.
+BRIDGE_DIR="${PI_BLENDER_BRIDGE_ASSETS_DIR:-$PROJECTS/pi-blender-bridge}"
+if [ ! -f "$BRIDGE_DIR/blender/live-bridge.py" ]; then
+	if [ -n "${PI_BLENDER_BRIDGE_ASSETS_DIR:-}" ]; then
+		echo "consumers.sh: PI_BLENDER_BRIDGE_ASSETS_DIR is $BRIDGE_DIR, which has no blender/live-bridge.py" >&2
+		exit 65
+	fi
+	echo "    fetching the bridge package -> $BRIDGE_DIR"
+	rm -rf "$BRIDGE_DIR"
+	git clone --quiet --depth 1 https://github.com/luxuride-pi-extensions/pi-blender-bridge "$BRIDGE_DIR"
+fi
+export PI_BLENDER_BRIDGE_ASSETS_DIR="$BRIDGE_DIR"
+
 echo "==> $name: test"
 PI_MANAGER_CORE_DIR="$REPO_ROOT" \
 	PI_AGENT_DIR="$AGENT_DIR" \
