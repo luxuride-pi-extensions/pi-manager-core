@@ -108,13 +108,22 @@ link pi-manager-core manager-core
 link pi-manager-core pi-manager-core
 link "$name" "$name"
 link pi-blender pi-blender
-# BOTH names for the vrchat consumer. `unity-vrchat` is the one pi derives from
-# the package (@luxuride-pi/unity-vrchat, unscoped -- the same rule that gives
-# `blender`, `manager-core` and `unity-blender`), and it is what pi-unity's own
-# engagement-test.mjs loads by absolute path. `pi-unity` is what a long-lived
-# git clone of the repository is called. Linking both costs one symlink and
-# removes the question of which one a suite was written against.
+# ALL THREE names for the vrchat consumer, because the three names are all in
+# use and none of them is wrong: pi derives `unity-vrchat` from the package
+# (@luxuride-pi/unity-vrchat, unscoped -- the same rule that gives `blender`,
+# `manager-core` and `unity-blender`) and pi-unity's own engagement-test.mjs
+# loads that one by absolute path; `pi-unity-vrchat` is the repository name,
+# which is what a git install produces and what pi-unity-blender's config.ts
+# reads for its Unity side prompt; `pi-unity` is what a long-lived clone of the
+# repository is actually called on a developer's machine.
+#
+# The three repos disagree about this, which is a real problem, but it is not
+# this job's problem: this job answers "does the changed core still match the
+# consumers", and a fixture covering every install shape it can is the honest
+# way to ask that. Deciding which name pi should install under is a separate
+# change, and one this fixture must not pre-empt.
 link "${UNITY_REPO:-pi-unity-vrchat}" unity-vrchat
+link "${UNITY_REPO:-pi-unity-vrchat}" pi-unity-vrchat
 link "${UNITY_REPO:-pi-unity-vrchat}" pi-unity
 link pi-unity-blender unity-blender
 
